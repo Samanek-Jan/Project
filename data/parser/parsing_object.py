@@ -1,5 +1,3 @@
-
-
 from typing import Iterable
 
 
@@ -12,8 +10,8 @@ class ParsedFunction(ParsedObject):
     header : str
 
 class ParsedStruct(ParsedObject):
-    methods : Iterable[ParsedFunction]
+    ...
 
 
 class ParsedClass(ParsedObject):
-    methods : Iterable[ParsedFunction]
+    ...

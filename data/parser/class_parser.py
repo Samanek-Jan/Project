@@ -9,26 +9,24 @@ from data.parser.parsing_object import ParsedClass
 class ClassParser:
 
     logger = logging.getLogger('ClassParser')
-    parsed_function = ParsedClass()
+    parsed_class = ParsedClass()
 
     def process(self, lines : List[str]):
         self.logger.debug('Processing struct')
         
         idx = self.__process_comment(lines)
         lines = lines[idx:]
-        body = self.__process_header(lines)
-        if len(body) > 0:
-            self.parsed_function.code = body
+        self.parsed_class.code = "".join(lines)
 
         # Reset and return
-        parsed_function = deepcopy(self.parsed_function)
-        self.parsed_function = ParsedClass()
-        return parsed_function
+        parsed_class = deepcopy(self.parsed_class)
+        self.parsed_class = ParsedClass()
+        return parsed_class
 
 
     def __process_comment(self, lines : List[str]) -> int:
         """
-        Parse the doxygen / comment of the function and fills parsed_function object
+        Parse the doxygen / comment of the function and fills parsed_class object
         
         params: 
         lines - lines of function code
@@ -50,7 +48,7 @@ class ClassParser:
             for line_idx in line_ids:
                 line = lines[line_idx].rstrip()
                 if line.endswith('*/'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
+                    self.parsed_class.comment = "".join(lines[:line_idx+1])
                     return line_idx + 1
 
             self.throw_exception(
@@ -65,7 +63,7 @@ class ClassParser:
             for line_idx in line_ids:
                 line = lines[line_idx].lstrip()
                 if not line.startswith('//'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
+                    self.parsed_class.comment = "".join(lines[:line_idx+1])
                     return line_idx + 1
             
             self.throw_exception(
