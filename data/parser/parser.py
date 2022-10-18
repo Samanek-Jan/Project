@@ -18,6 +18,8 @@ CODE_AUTOMATA_STATE = "c"
 INVALID_AUTOMATA_STATE = "i"
 FINISH_AUTOMATA_STATE = "f"
 
+DATA_FILE_SUFFIX = "data.json"
+
 class_keyword = "class"
 struct_keyword = "struct"
 
@@ -187,6 +189,13 @@ class Parser:
             
             if self.bracket_counter > 0 and self.current_parsing_type == None:
                 self.current_parsing_type = "function"
+            
+            # Only declaration
+            elif line.rstrip().endswith(";"):
+                self.current_parsing_type = "function" if self.current_parsing_type == None else self.current_parsing_type
+                return self.__object_ready_state()
+            
+            # Error parsing brackets
             elif self.bracket_counter < 0:
                 message = f"Error counting brackets with result {self.bracket_counter} on line \"{line}\"\n"
                 self.logger.error(message)

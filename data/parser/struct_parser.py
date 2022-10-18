@@ -16,7 +16,7 @@ class StructParser:
         
         idx = self.__process_comment(lines)
         lines = lines[idx:]
-        self.parsed_struct.code = "".join(lines)
+        self.parsed_struct.code = "\n".join(lines)
 
         # Reset and return
         parsed_struct = deepcopy(self.parsed_struct)
@@ -48,11 +48,11 @@ class StructParser:
             for line_idx in line_ids:
                 line = lines[line_idx].rstrip()
                 if line.endswith('*/'):
-                    self.parsed_struct.comment = "".join(lines[:line_idx+1])
+                    self.parsed_struct.comment = "\n".join(lines[:line_idx+1])
                     return line_idx + 1
 
             self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
+                "Error parsing comment:\n {}\n".format("\n".join(lines)),
                 "Error parsing comment"
             )
 
@@ -63,11 +63,11 @@ class StructParser:
             for line_idx in line_ids:
                 line = lines[line_idx].lstrip()
                 if not line.startswith('//'):
-                    self.parsed_struct.comment = "".join(lines[:line_idx+1])
+                    self.parsed_struct.comment = "\n".join(lines[:line_idx+1])
                     return line_idx + 1
             
             self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
+                "Error parsing comment:\n {}\n".format("\n".join(lines)),
                 "Error parsing comment"
             )
 
@@ -75,7 +75,7 @@ class StructParser:
         # Invalid start token
         else:
             self.throw_exception(
-                "Invalid start token in comment:\n {}\n".format("".join(lines)),
+                "Invalid start token in comment:\n {}\n".format("\n".join(lines)),
                 "Invalid start token in comment"
             )
 

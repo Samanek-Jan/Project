@@ -10,7 +10,7 @@ class FunctionParser:
 
     logger = logging.getLogger('FunctionParser')
     parsed_function = ParsedFunction()
-    gpu_prefixes = ["__global__", "__device__", "__host__"]
+    gpu_prefixes = ["__global__", "__device__", "__host__", "__constant__"]
 
     def process(self, lines : List[str]):
         self.logger.debug('Processing function')
@@ -51,11 +51,11 @@ class FunctionParser:
             for line_idx in line_ids:
                 line = lines[line_idx].rstrip()
                 if line.endswith('*/'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
+                    self.parsed_function.comment = "\n".join(lines[:line_idx+1])
                     return line_idx + 1
 
             self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
+                "Error parsing comment:\n {}\n".format("\n".join(lines)),
                 "Error parsing comment"
             )
 
@@ -66,11 +66,11 @@ class FunctionParser:
             for line_idx in line_ids:
                 line = lines[line_idx].lstrip()
                 if not line.startswith('//'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
+                    self.parsed_function.comment = "\n".join(lines[:line_idx+1])
                     return line_idx + 1
             
             self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
+                "Error parsing comment:\n {}\n".format("\n".join(lines)),
                 "Error parsing comment"
             )
 
@@ -96,20 +96,26 @@ class FunctionParser:
 
         if len(lines) == 0:
             self.throw_exception(
-                "Error parsing function header:\n {}\n".format("".join(lines)),
+                "Error parsing function header:\n {}\n".format("\n".join(lines)),
                 "Error parsing function header"
             )
 
-        code = "".join(lines)
-        body_start_idx = code.find("{")
-        header = code[:body_start_idx]
-
+        body = "\n".join(lines)
+        body_start_idx = body.find("{")
+        
+        # No body. Just declaration
+        if body_start_idx == -1:
+            self.parsed_function.header = body
+            self.parsed_function.is_gpu = any((gpu_prefix in body) for gpu_prefix in self.gpu_prefixes)
+            return ""
+        
+        header = body[:body_start_idx]
         # Set the parsed header
         self.parsed_function.header = header
         # Check if function is for GPUs
         self.parsed_function.is_gpu = any((gpu_prefix in header) for gpu_prefix in self.gpu_prefixes)
         
-        return code[body_start_idx:] if body_start_idx > 0 else ""
+        return body[body_start_idx:]
 
     
     
