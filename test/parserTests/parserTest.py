@@ -36,7 +36,7 @@ class ParsingTestCase(TestCase):
 
         parsed_class = class_parser.process(lines)
         self.assertIsNotNone(parsed_class.comment)
-        self.assertIsNotNone(parsed_class.code)
+        self.assertIsNotNone(parsed_class.code);
         
     def test_parser(self):
         parser = Parser()
@@ -45,8 +45,16 @@ class ParsingTestCase(TestCase):
         
         self.assertEqual(len(parsed_objects), 3)
         self.assertEqual(parsed_objects[0].__class__, ParsedClass)
-        self.assertEqual(parsed_objects[1].__class__, ParsedFunction)
-        self.assertEqual(parsed_objects[2].__class__, ParsedStruct)
+        self.assertEqual(parsed_objects[1].__class__, ParsedStruct)
+        self.assertEqual(parsed_objects[2].__class__, ParsedFunction)
+        
+    def test_parse_real_data(self):
+        parser = Parser()
+        filename = "data/raw/kspaceFirstOrder-CUDA/Containers/CudaMatrixContainer.cu"
+        
+        parsed_objects = parser.process_file(filename)
+        self.assertIsNotNone(parsed_objects)
+        self.assertEqual(len(parsed_objects), 5)
         
 
         
