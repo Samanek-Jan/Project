@@ -2,6 +2,6 @@ __init__.py
 __pycache__/
 .pytest_cache/
 .vscode/
-data/processed
+data/processed/*.data.json
 data/raw
 test/test_data
