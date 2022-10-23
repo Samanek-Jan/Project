@@ -2,84 +2,75 @@ from copy import deepcopy
 import logging
 from typing import List
 from data.parser.parser_exceptions import ParsingStructException
-
-from data.parser.parsing_object import ParsedStruct
+from data.parser.parsing_object import PARSED_STRUCT_TEMPLATE
 
 
 class StructParser:
 
     logger = logging.getLogger('StructParser')
-    parsed_struct = ParsedStruct()
+    
 
     def process(self, lines : List[str]):
         self.logger.debug('Processing struct')
+        self.parsed_struct = deepcopy(PARSED_STRUCT_TEMPLATE)
+        content = "\n".join(lines)
         
-        idx = self.__process_comment(lines)
-        lines = lines[idx:]
-        self.parsed_struct.code = "\n".join(lines)
+        body = self.__process_comment(content)
+        
+        if body.strip() == "":
+            return None
+        
+        self.parsed_struct["body"] = body
+        self.parsed_struct["type"] = "struct"
+        return self.parsed_struct
 
-        # Reset and return
-        parsed_struct = deepcopy(self.parsed_struct)
-        self.parsed_struct = ParsedStruct()
-        return parsed_struct
 
+    def __process_comment(self, content : str) -> str:
+        """ Parse comment from given content
 
-    def __process_comment(self, lines : List[str]) -> int:
+        Args:
+            content (str): code of structure with optional comment
+
+        Returns:
+            str: rest of code without comment
         """
-        Parse the doxygen / comment of the function and fills parsed_struct object
+
+        if len(content.strip()) == 0:
+            self.__throw_exception(
+                "No class content found",
+                "No class content found"
+            )
+
+        lines = content.split("\n")
+        char_count = 0
+        comment = []
         
-        params: 
-        lines - lines of function code
-        
-        return - index of next line after comment
-        """
-
-        if len(lines) == 0:
-            self.throw_exception(
-                "No function content found",
-                "No function content found"
-            )
-
-        first_line = lines[0].lstrip()
-        # Parsing doxygen
-        if first_line.startswith('/*'):
-            line_ids = range(0, len(lines))
+        if lines[0].lstrip().startswith("/*"):
             
-            for line_idx in line_ids:
-                line = lines[line_idx].rstrip()
-                if line.endswith('*/'):
-                    self.parsed_struct.comment = "\n".join(lines[:line_idx+1])
-                    return line_idx + 1
-
-            self.throw_exception(
-                "Error parsing comment:\n {}\n".format("\n".join(lines)),
-                "Error parsing comment"
-            )
-
-
-        # Parsing one line comments
-        elif first_line.startswith('//'):
-            line_ids = range(0, len(lines))
-            for line_idx in line_ids:
-                line = lines[line_idx].lstrip()
-                if not line.startswith('//'):
-                    self.parsed_struct.comment = "\n".join(lines[:line_idx+1])
-                    return line_idx + 1
+            for line in lines:
+                end_comment = line.find("*/")
+                if end_comment > -1:
+                    char_count += end_comment
+                    comment.append(line[:end_comment])
+                    self.parsed_struct["comment"] = "\n".join(comment)
+                    return content[char_count:]           
+                else:
+                    char_count += len(line)
+                    comment.append(line.rstrip())
             
-            self.throw_exception(
-                "Error parsing comment:\n {}\n".format("\n".join(lines)),
-                "Error parsing comment"
-            )
-
-
-        # Invalid start token
+        elif lines[0].lstrip().startswith("//"):
+            for line in lines:
+                if not line.lstrip().startswith("//"):
+                    self.parsed_struct["comment"] = "\n".join(comment)
+                    return content[char_count:]  
+                else:
+                    char_count += len(line)
+                    comment.append(line.rstrip())        
         else:
-            self.throw_exception(
-                "Invalid start token in comment:\n {}\n".format("\n".join(lines)),
-                "Invalid start token in comment"
-            )
-
-    def throw_exception(self, debugger_error : str, exception_error : str) -> None:
+            self.parsed_struct["comment"] = ""
+            return content
+        
+    def __throw_exception(self, debugger_error : str, exception_error : str) -> None:
         """
         Throw exception
         

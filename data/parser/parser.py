@@ -1,14 +1,16 @@
 from configparser import ParsingError
+from genericpath import isdir
 from io import TextIOWrapper
+import json
 import re
 import sys, os
 import logging
-from typing import Generator, Iterable, List
+from typing import Dict, Generator, Iterable, List
 from data.parser.class_parser import ClassParser
 from data.parser.function_parser import FunctionParser
-from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, ParsingFunctionException
+from data.parser.object_parser import ObjectParser
+from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, InvalidTypeException, ParsingFunctionException
 from data.parser.struct_parser import StructParser
-from data.parser.parsing_object import ParsedObject
 from copy import deepcopy
 
 READY_AUTOMATA_STATE = "r"
@@ -17,8 +19,6 @@ ONE_LINE_COMMENT_AUTOMATA_STATE = "olc"
 CODE_AUTOMATA_STATE = "c"
 INVALID_AUTOMATA_STATE = "i"
 FINISH_AUTOMATA_STATE = "f"
-
-DATA_FILE_SUFFIX = "data.json"
 
 class_keyword = "class"
 struct_keyword = "struct"
@@ -30,7 +30,8 @@ class Parser:
         self.parsers = {
             "class": ClassParser(),
             "struct": StructParser(),
-            "function": FunctionParser()
+            "function": FunctionParser(),
+            "object": ObjectParser(),
         }
         
         self.automata_states = {
@@ -44,12 +45,12 @@ class Parser:
         
         self.current_status       : str                = READY_AUTOMATA_STATE # basically enum of automata states
         self.current_code_block   : List[str]          = []
-        self.current_parsing_type : str                = None # One of [None, class, function, struct]
+        self.current_parsing_type : str                = None    # One of [None, class, function, struct]
         self.bracket_counter      : int                = 0
-        self.parsedObjectList     : List[ParsedObject] = []
+        self.parsedObjectList     : List               = []
         
 
-    def process_file(self, filename : str) -> List[ParsedObject]:
+    def process_file(self, filename : str) -> List:
         """ Parse and process given file
 
         Args:
@@ -63,8 +64,9 @@ class Parser:
 
         if self.__is_file_valid(filename):
             return self.__process_file(filename)
+        return []
         
-    def process_str(self, content : str, filename : str) -> List[ParsedObject]:
+    def process_str(self, content : str, filename : str) -> List:
         """ Parse and process given file
 
         Args:
@@ -77,7 +79,7 @@ class Parser:
         self.logger.debug(f'Processing {filename}')
         return self.__process_str(content.split("\n"), filename)
 
-    def process_files(self, filenames : Iterable[str]) -> Generator[List[ParsedObject], None, None]:
+    def process_files(self, filenames : Iterable[str]) -> Generator[List, None, None]:
         """ Parse all given files
 
         Args:
@@ -100,12 +102,12 @@ class Parser:
         """
         return os.path.isfile(filename)
 
-    def __process_file(self, filename : str) -> List[ParsedObject]:
+    def __process_file(self, filename : str) -> List:
         with open(filename, 'r') as fd:
             lines = fd.readlines()
             return self.__process_str(lines, filename)
     
-    def __process_str(self, lines : Iterable[str], filename : str) -> List[ParsedObject]:
+    def __process_str(self, lines : Iterable[str], filename : str) -> List:
         
         """ Processing a file content
         
@@ -117,6 +119,7 @@ class Parser:
         """
         
         self.parsedObjectList.clear()
+        self.current_status = "r"
         
         for _, line in enumerate(lines):
             self.current_status = self.automata_states[self.current_status](line)
@@ -125,11 +128,7 @@ class Parser:
                 
     def __ready_parsing_state(self, line : str) -> str:
         line = line.strip()
-        if line.startswith("/*"):
-            # Parsed unimportant characters before
-            if self.current_code_block is not []:
-                self.current_code_block = []
-                
+        if line.startswith("/*"):                
             return self.__parsing_doxygen_state(line) # Return doxygen state
         
         elif line.startswith("//"):
@@ -139,10 +138,7 @@ class Parser:
             return self.__parsing_code_state(line)
 
         else:
-            # Parsed unimportant characters before
-            if self.current_code_block is not []:
-                self.current_code_block = []
-                
+            self.current_code_block.clear()                
             return READY_AUTOMATA_STATE # Return ready for parsing state
     
     def __parsing_doxygen_state(self, line: str) -> str:
@@ -152,13 +148,14 @@ class Parser:
         
     def __parsing_one_line_comment_state(self, line: str) -> str:
         self.current_code_block.append(line.rstrip())
-        return READY_AUTOMATA_STATE # Return code state
+        return READY_AUTOMATA_STATE # Return ready state
     
     def __parsing_code_state(self, line: str) -> str:
+        
         if self.current_parsing_type != None:
 
             self.current_code_block.append(line.rstrip())            
-            self.bracket_counter += count_brackets(line)
+            self.bracket_counter += self.count_brackets(line)
             
             if self.bracket_counter == 0:
                 return self.__object_ready_state()
@@ -172,27 +169,28 @@ class Parser:
         
         else:    
             if line.strip() == "":
-                return INVALID_AUTOMATA_STATE
+                self.current_parsing_type = "object"
+                return self.__object_ready_state()
             
             tokens = line.split(" ")
+            self.current_code_block.append(line.rstrip())
+            self.bracket_counter += self.count_brackets(line)
             
             # Is class
-            if class_keyword in tokens:
+            if self.current_parsing_type == None and class_keyword in tokens:
                 self.current_parsing_type = "class"
             
             # Is struct
-            elif struct_keyword in tokens:
+            elif self.current_parsing_type == None and struct_keyword in tokens:
                 self.current_parsing_type = "struct"
             
-            self.current_code_block.append(line.rstrip())            
-            self.bracket_counter += count_brackets(line)
-            
-            if self.bracket_counter > 0 and self.current_parsing_type == None:
+            # Is probably definition of a function
+            elif self.current_parsing_type == None and self.bracket_counter > 0:
                 self.current_parsing_type = "function"
             
             # Only declaration
-            elif line.rstrip().endswith(";"):
-                self.current_parsing_type = "function" if self.current_parsing_type == None else self.current_parsing_type
+            elif line.find(";") != -1:
+                self.current_parsing_type = "object" if self.current_parsing_type == None else self.current_parsing_type
                 return self.__object_ready_state()
             
             # Error parsing brackets
@@ -205,11 +203,11 @@ class Parser:
 
 
     def __parsing_invalid_state(self, line: str) -> str:
-        self.current_parsing_type = None
+        self.current_parsing_type = None  
         self.current_code_block.clear()
         
         if self.bracket_counter > 0:
-            self.bracket_counter += count_brackets(line)
+            self.bracket_counter += self.count_brackets(line)
             if self.bracket_counter == 0:
                 return READY_AUTOMATA_STATE
             else:
@@ -237,7 +235,49 @@ class Parser:
         return READY_AUTOMATA_STATE
                 
         
-def count_brackets(line : str):
-    d = {"{" : 1, "}" : -1}
-    return sum([d[c] for c in line if c in d])
+    def count_brackets(self, line : str):
+        d = {"{" : 1, "}" : -1}
+        return sum([d[c] for c in line if c in d])
+
+# ----------------------------------------------------------------
+# ------------------------ END OF PARSER -------------------------
+# ----------------------------------------------------------------
+
+COMPATIBLE_FILE_SUFFIXES = set(["c", "cpp", "cc", "h", "hpp", "cu", "hu"])
+DATA_FILE_SUFFIX = ".data.json"
+
+def parse_folder(in_folder : str, out_folder : str, prefix = "") -> None:
+
+    files = [file for file in os.listdir(in_folder)]
+    parser = Parser()
+    
+    count = 1
+    for file in files:
+        full_path = os.path.join(in_folder, file)
+        
+        if os.path.isdir(full_path):
+            parse_folder(full_path, out_folder, f"{prefix}{count}.")
+            count += 1
+        
+        elif file.split(".")[-1] in COMPATIBLE_FILE_SUFFIXES:
+            file_prefix = f"{prefix}{count}."
+            print(f"{file_prefix} IN  - \"{full_path}\"")
+            parsed_objects = parser.process_file(full_path)
+            out_file_name = "{}{}{}".format(file_prefix.replace(".", "-"), file, DATA_FILE_SUFFIX)
+            out_file_path = os.path.join(out_folder, out_file_name)
+            print(f"{prefix}{count}. OUT - \"{out_file_path}\"\n")
+            
+            with open(out_file_path, "w") as fd:
+                json.dump(parsed_objects, fd)
+            count += 1
+    
+    
+
+
+if __name__ == "__main__":
+    print("Processing Raw data")
+    in_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/raw"
+    out_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed"
+    parse_folder(in_folder, out_folder)
+    
     

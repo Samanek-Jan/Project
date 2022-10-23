@@ -1,17 +1,20 @@
-from typing import Iterable
 
+PARSED_OBJECT_TEMPLATE = {
+    "comment" : "",
+    "body"    : "",
+    "type"    : "" 
+}
 
-class ParsedObject:
-    comment : str
-    code : str
+PARSED_CLASS_TEMPLATE = {
+    **PARSED_OBJECT_TEMPLATE
+}
 
-class ParsedFunction(ParsedObject):
-    is_gpu : bool
-    header : str
+PARSED_STRUCT_TEMPLATE = {
+    **PARSED_OBJECT_TEMPLATE
+}
 
-class ParsedStruct(ParsedObject):
-    ...
-
-
-class ParsedClass(ParsedObject):
-    ...
+PARSED_FUNCTION_TEMPLATE = {
+    **PARSED_OBJECT_TEMPLATE,
+    "header" : "",
+    "is_gpu" : False
+}
