@@ -1,4 +1,6 @@
 
+PARSING_TYPES = ["object", "struct", "class", "function"]
+
 PARSED_OBJECT_TEMPLATE = {
     "comment" : "",
     "body"    : "",

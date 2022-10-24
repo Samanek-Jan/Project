@@ -54,7 +54,7 @@ class ClassParser:
                     char_count += end_comment
                     comment.append(line[:end_comment])
                     self.parsed_class["comment"] = "\n".join(comment)
-                    return content[char_count:]           
+                    return content[char_count:].strip()         
                 else:
                     char_count += len(line)
                     comment.append(line.rstrip())
@@ -63,13 +63,13 @@ class ClassParser:
             for line in lines:
                 if not line.lstrip().startswith("//"):
                     self.parsed_class["comment"] = "\n".join(comment)
-                    return content[char_count:]  
+                    return content[char_count:].strip()
                 else:
                     char_count += len(line)
                     comment.append(line.rstrip())        
         else:
             self.parsed_class["comment"] = ""
-            return content
+            return content.strip()
         
     def __throw_exception(self, debugger_error : str, exception_error : str) -> None:
         """

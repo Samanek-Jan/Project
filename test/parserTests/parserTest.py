@@ -1,10 +1,14 @@
 from unittest import TestCase
 import unittest
 
-from data.parser.parser import Parser
+from data.parser.parser import DATA_FILE_SUFFIX, Parser
 from data.parser.function_parser import FunctionParser
+from data.parser.parsing_object import PARSING_TYPES
 from data.parser.struct_parser import StructParser
-from data.parser.class_parser import ClassParser 
+from data.parser.class_parser import ClassParser
+
+from tqdm import tqdm
+import os, sys, json
 
 class ParsingTestCase(TestCase):
     
@@ -54,6 +58,25 @@ class ParsingTestCase(TestCase):
         parsed_objects = parser.process_file(filename)
         self.assertIsNotNone(parsed_objects)
         self.assertEqual(len(parsed_objects), 7)
+        
+    def test_check_converted_objects(self):
+        in_folder = "data/processed"
+        files = [file for file in os.listdir(in_folder) if file.endswith(DATA_FILE_SUFFIX)]
+        
+        for file in files:
+            
+            with open(os.path.join(in_folder, file), "r") as fd:
+                parsed_objects = json.load(fd)
+                
+            for parsed_object in parsed_objects:
+                self.assertIsNotNone(parsed_object["type"], "Error: type missing in {}".format(file))
+                self.assertIsNotNone(parsed_object["body"], "Error: body missing in {}".format(file))
+
+                self.assertIn(parsed_object["type"], PARSING_TYPES, "Error: Unknown type \"{}\" in file \"{}\"".format(parsed_object["type"], file))
+
+                if parsed_object["type"] == "function":
+                    self.assertGreater(len(parsed_object["header"]), 0, "Error: header empty in file \"{}\"".format(file))                
+                    self.assertGreater(len(parsed_object["body"]), 0, "Error: body empty in file \"{}\"".format(file))                
         
 
         

@@ -73,10 +73,9 @@ class FunctionParser:
             
         else:
             self.parsed_function["comment"] = ""
-            return content
+            return content.strip()
 
     def __process_header(self, content : str) -> str:
-
 
         if len(content) == 0:
             self.__throw_exception(
