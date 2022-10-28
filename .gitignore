@@ -4,10 +4,7 @@ __pycache__/
 .vscode/
 data/processed/*.data.json
 data/raw
-<<<<<<< HEAD
 data/tokenizer/
 test/test_data/
-=======
 test/test_data
 data/tokenizer/
->>>>>>> development/dataset
