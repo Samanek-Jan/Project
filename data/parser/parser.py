@@ -22,6 +22,7 @@ FINISH_AUTOMATA_STATE = "f"
 
 class_keyword = "class"
 struct_keyword = "struct"
+GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
 
 class Parser:
 
@@ -48,6 +49,7 @@ class Parser:
         self.current_parsing_type : str                = None    # One of [None, class, function, struct]
         self.bracket_counter      : int                = 0
         self.parsedObjectList     : List               = []
+        self.is_current_file_gpu  : bool               = False
         
 
     def process_file(self, filename : str) -> List:
@@ -63,21 +65,9 @@ class Parser:
         self.logger.debug(f'Processing {filename}')
 
         if self.__is_file_valid(filename):
+            self.is_current_file_gpu = filename.split(".")[-1] in GPU_FILE_SUFFIXES
             return self.__process_file(filename)
         return []
-        
-    def process_str(self, content : str, filename : str) -> List:
-        """ Parse and process given file
-
-        Args:
-            filename (str): input filename to be parsed
-
-        Returns:
-            List[ParsedObject]: Lexical list of parsed objects
-        """
-        
-        self.logger.debug(f'Processing {filename}')
-        return self.__process_str(content.split("\n"), filename)
 
     def process_files(self, filenames : Iterable[str]) -> Generator[List, None, None]:
         """ Parse all given files
@@ -90,6 +80,19 @@ class Parser:
         """
         for filename in filenames:
             yield self.process_file(filename)
+            
+    def process_str(self, content : str, filename : str) -> List:
+        """ Parse and process given file
+
+        Args:
+            filename (str): input filename to be parsed
+
+        Returns:
+            List[ParsedObject]: Lexical list of parsed objects
+        """
+        
+        self.logger.debug(f'Processing {filename}')
+        return self.__process_str(content.split("\n"), filename)
 
     def __is_file_valid(self, filename : str) -> bool:
         """ Checking if file exists
@@ -227,7 +230,7 @@ class Parser:
             self.logger.error(message)
             raise ParsingError(message)
         
-        self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block))
+        self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, self.is_current_file_gpu))
         self.current_status = READY_AUTOMATA_STATE
         self.current_code_block.clear()
         self.current_parsing_type = None

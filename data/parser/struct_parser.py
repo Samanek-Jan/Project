@@ -10,7 +10,7 @@ class StructParser:
     logger = logging.getLogger('StructParser')
     
 
-    def process(self, lines : List[str]):
+    def process(self, lines : List[str], is_gpu : bool):
         self.logger.debug('Processing struct')
         self.parsed_struct = deepcopy(PARSED_STRUCT_TEMPLATE)
         content = "\n".join(lines)
@@ -22,6 +22,7 @@ class StructParser:
         
         self.parsed_struct["body"] = body
         self.parsed_struct["type"] = "struct"
+        self.parsed_struct["is_gpu"] = is_gpu
         return self.parsed_struct
 
 

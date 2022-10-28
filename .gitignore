@@ -5,4 +5,8 @@ __pycache__/
 data/processed/*.data.json
 data/raw
 test/test_data
+<<<<<<< HEAD
 data/tokenizer
+=======
+data/tokenizer/
+>>>>>>> development-parser

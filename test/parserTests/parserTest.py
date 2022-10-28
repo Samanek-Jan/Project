@@ -1,7 +1,7 @@
 from unittest import TestCase
 import unittest
 
-from data.parser.parser import DATA_FILE_SUFFIX, Parser
+from data.parser.parser import DATA_FILE_SUFFIX, GPU_FILE_SUFFIXES, Parser
 from data.parser.function_parser import FunctionParser
 from data.parser.parsing_object import PARSING_TYPES
 from data.parser.struct_parser import StructParser
@@ -14,10 +14,11 @@ class ParsingTestCase(TestCase):
     
     def test_function_parsing(self):
         function_parser = FunctionParser()
-        with open("./test/test_data/cuda_function.cu", "r") as fd:
+        test_file = "./test/test_data/cuda_function.cu"
+        with open(test_file, "r") as fd:
             lines = fd.readlines()
 
-        parsed_function = function_parser.process(lines)
+        parsed_function = function_parser.process(lines, test_file.split(".")[-1] in GPU_FILE_SUFFIXES)
         self.assertGreater(len(parsed_function["comment"]), 0)
         self.assertGreater(len(parsed_function["header"]), 0)
         self.assertGreater(len(parsed_function["body"]), 0)
@@ -25,19 +26,21 @@ class ParsingTestCase(TestCase):
         
     def test_struct_parsing(self):
         struct_parser = StructParser()
-        with open("./test/test_data/struct.cpp", "r") as fd:
+        test_file = "./test/test_data/struct.cpp"
+        with open(test_file, "r") as fd:
             lines = fd.readlines()
 
-        parsed_struct = struct_parser.process(lines)
+        parsed_struct = struct_parser.process(lines, test_file.split(".")[-1] in GPU_FILE_SUFFIXES)
         self.assertGreater(len(parsed_struct["comment"]), 0)
         self.assertGreater(len(parsed_struct["body"]), 0)
         
     def test_class_parsing(self):
         class_parser = ClassParser()
-        with open("./test/test_data/class.cpp", "r") as fd:
+        test_file = "./test/test_data/class.cpp"
+        with open(test_file, "r") as fd:
             lines = fd.readlines()
 
-        parsed_class = class_parser.process(lines)
+        parsed_class = class_parser.process(lines, test_file.split(".")[-1] in GPU_FILE_SUFFIXES)
         self.assertGreater(len(parsed_class["comment"]), 0)
         self.assertGreater(len(parsed_class["body"]), 0)
         
@@ -68,10 +71,13 @@ class ParsingTestCase(TestCase):
             with open(os.path.join(in_folder, file), "r") as fd:
                 parsed_objects = json.load(fd)
                 
+            # -3 because of the .data.json suffix for every data file
+            is_gpu = file.split(".")[-3] in GPU_FILE_SUFFIXES
+                
             for parsed_object in parsed_objects:
                 self.assertIsNotNone(parsed_object["type"], "Error: type missing in {}".format(file))
                 self.assertIsNotNone(parsed_object["body"], "Error: body missing in {}".format(file))
-
+                self.assertEqual(parsed_object["is_gpu"], is_gpu)
                 self.assertIn(parsed_object["type"], PARSING_TYPES, "Error: Unknown type \"{}\" in file \"{}\"".format(parsed_object["type"], file))
 
                 if parsed_object["type"] == "function":
