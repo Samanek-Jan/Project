@@ -9,9 +9,8 @@ class FunctionParser:
 
     def __init__(self):
         self.logger = logging.getLogger('FunctionParser')
-        self.gpu_prefixes = ["__global__", "__device__", "__host__", "__constant__"]
 
-    def process(self, lines : List[str]):
+    def process(self, lines : List[str], is_gpu : bool):
         self.logger.debug('Processing function')
         self.parsed_function = deepcopy(PARSED_FUNCTION_TEMPLATE)
         
@@ -20,6 +19,7 @@ class FunctionParser:
         body = self.__process_header(content)
         self.parsed_function["body"] = body
         self.parsed_function["type"] = "function"
+        self.parsed_function["is_gpu"] = is_gpu
         return self.parsed_function
 
 
@@ -88,14 +88,14 @@ class FunctionParser:
         # No body. Just declaration
         if body_start_idx == -1:
             self.parsed_function["header"] = content
-            self.parsed_function["is_gpu"] = any((gpu_prefix in set(content.split(" "))) for gpu_prefix in self.gpu_prefixes)
+            # self.parsed_function["is_gpu"] = any((gpu_prefix in set(content.split(" "))) for gpu_prefix in self.gpu_prefixes)
             return ""
         
         header = content[:body_start_idx]
         # Set the parsed header
         self.parsed_function["header"] = header
         # Check if function is for GPUs
-        self.parsed_function["is_gpu"] = any((gpu_prefix in header) for gpu_prefix in self.gpu_prefixes)
+        # self.parsed_function["is_gpu"] = any((gpu_prefix in header) for gpu_prefix in self.gpu_prefixes)
         
         return content[body_start_idx:]
 

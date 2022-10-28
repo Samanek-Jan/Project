@@ -11,7 +11,7 @@ class ClassParser:
     logger = logging.getLogger('ClassParser')
     
 
-    def process(self, lines : List[str]):
+    def process(self, lines : List[str], is_gpu : bool):
         self.logger.debug('Processing struct')
         self.parsed_class = deepcopy(PARSED_CLASS_TEMPLATE)
         content = "\n".join(lines)
@@ -23,6 +23,7 @@ class ClassParser:
         
         self.parsed_class["body"] = body
         self.parsed_class["type"] = "class"
+        self.parsed_class["is_gpu"] = is_gpu
         return self.parsed_class
 
 

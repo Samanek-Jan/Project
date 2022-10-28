@@ -9,7 +9,7 @@ class ObjectParser:
 
     logger = logging.getLogger('ObjectParser')
 
-    def process(self, lines : List[str]):
+    def process(self, lines : List[str], is_gpu : bool):
         self.parsed_object = deepcopy(PARSED_OBJECT_TEMPLATE) 
         self.logger.debug('Processing struct')
         content = "\n".join(lines)
@@ -18,6 +18,7 @@ class ObjectParser:
         
         self.parsed_object["body"] = body
         self.parsed_object["type"] = "object"
+        self.parsed_object["is_gpu"] = is_gpu
         return self.parsed_object
 
 
