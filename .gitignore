@@ -5,3 +5,4 @@ __pycache__/
 data/processed/*.data.json
 data/raw
 test/test_data
+data/tokenizer
