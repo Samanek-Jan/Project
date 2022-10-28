@@ -2,118 +2,106 @@ from copy import deepcopy
 import logging
 from typing import List
 from data.parser.parser_exceptions import ParsingFunctionException
-
-from data.parser.parsing_object import ParsedFunction
+from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE
 
 
 class FunctionParser:
 
-    logger = logging.getLogger('FunctionParser')
-    parsed_function = ParsedFunction()
-    gpu_prefixes = ["__global__", "__device__", "__host__"]
+    def __init__(self):
+        self.logger = logging.getLogger('FunctionParser')
 
-    def process(self, lines : List[str]):
+    def process(self, lines : List[str], is_gpu : bool):
         self.logger.debug('Processing function')
+        self.parsed_function = deepcopy(PARSED_FUNCTION_TEMPLATE)
         
-        idx = self.__process_comment(lines)
-        lines = lines[idx:]
-        body = self.__process_header(lines)
-        if len(body) > 0:
-            self.parsed_function.code = body
-
-        # Reset and return
-        parsed_function = deepcopy(self.parsed_function)
-        self.parsed_function = ParsedFunction()
-        return parsed_function
+        content = "\n".join(lines)
+        content = self.__process_comment(content)
+        body = self.__process_header(content)
+        self.parsed_function["body"] = body
+        self.parsed_function["type"] = "function"
+        self.parsed_function["is_gpu"] = is_gpu
+        return self.parsed_function
 
 
-    def __process_comment(self, lines : List[str]) -> int:
-        """
-        Parse the doxygen / comment of the function and fills parsed_function object
-        
-        params: 
-        lines - lines of function code
-        
-        return - index of next line after comment
-        """
+    def __process_comment(self, content : str) -> str:
 
-        if len(lines) == 0:
-            self.throw_exception(
+        if len(content) == 0:
+            self.__throw_exception(
                 "No function content found",
                 "No function content found"
             )
 
+        lines = content.split("\n")
         first_line = lines[0].lstrip()
+        char_count = 0
+
         # Parsing doxygen
         if first_line.startswith('/*'):
-            line_ids = range(0, len(lines))
             
-            for line_idx in line_ids:
-                line = lines[line_idx].rstrip()
-                if line.endswith('*/'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
-                    return line_idx + 1
+            for line in lines:
+                end_comment = line.find('*/')
+                if end_comment > -1:
+                    self.parsed_function["comment"] += line.rstrip()
+                    char_count += end_comment                    
+                    return content[char_count:].strip()
+                else:
+                    self.parsed_function["comment"] += line.rstrip()
+                    char_count += len(line)
 
-            self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
-                "Error parsing comment"
+            self.__throw_exception(
+                "Function does not have any body:\n {}\n".format("\n".join(content)),
+                "Function does not have any body"
             )
 
 
         # Parsing one line comments
-        elif first_line.startswith('//'):
-            line_ids = range(0, len(lines))
-            for line_idx in line_ids:
-                line = lines[line_idx].lstrip()
-                if not line.startswith('//'):
-                    self.parsed_function.comment = "".join(lines[:line_idx+1])
-                    return line_idx + 1
+        if first_line.startswith('//'):
             
-            self.throw_exception(
-                "Error parsing comment:\n {}\n".format("".join(lines)),
-                "Error parsing comment"
+            for line in lines:
+                if not line.lstrip().startswith("//"):
+                    self.parsed_function["comment"] += line.strip()
+                    return content[char_count:].strip()
+                else:
+                    self.parsed_function["comment"] += line.strip()
+
+                char_count += len(line)
+
+            self.__throw_exception(
+                "Function does not have any body:\n {}\n".format("\n".join(content)),
+                "Function does not have any body"
             )
-
-
-        # Invalid start token
+            
         else:
-            self.throw_exception(
-                "Invalid start token in comment:\n {}\n".format("".join(lines)),
-                "Invalid start token in comment"
+            self.parsed_function["comment"] = ""
+            return content.strip()
+
+    def __process_header(self, content : str) -> str:
+
+        if len(content) == 0:
+            self.__throw_exception(
+                "Parsing function has no header",
+                "Parsing function has no header"
             )
 
-
-
-    def __process_header(self, lines : List[str]) -> str:
-        """
-        Parse the header of the function and fills parsed_function object
+        body_start_idx = content.find("{")
         
-        params: 
-        lines - lines of function code
+        # No body. Just declaration
+        if body_start_idx == -1:
+            self.parsed_function["header"] = content
+            # self.parsed_function["is_gpu"] = any((gpu_prefix in set(content.split(" "))) for gpu_prefix in self.gpu_prefixes)
+            return ""
         
-        return - rest of the content
-        """
-
-        if len(lines) == 0:
-            self.throw_exception(
-                "Error parsing function header:\n {}\n".format("".join(lines)),
-                "Error parsing function header"
-            )
-
-        code = "".join(lines)
-        body_start_idx = code.find("{")
-        header = code[:body_start_idx]
-
+        header = content[:body_start_idx]
         # Set the parsed header
-        self.parsed_function.header = header
+        self.parsed_function["header"] = header
         # Check if function is for GPUs
-        self.parsed_function.is_gpu = any((gpu_prefix in header) for gpu_prefix in self.gpu_prefixes)
+        # self.parsed_function["is_gpu"] = any((gpu_prefix in header) for gpu_prefix in self.gpu_prefixes)
         
-        return code[body_start_idx:] if body_start_idx > 0 else ""
+        return content[body_start_idx:]
 
     
     
-    def throw_exception(self, debugger_error : str, exception_error : str) -> None:
+    def __throw_exception(self, debugger_error : str, exception_error : str) -> None:
         """
         Throw exception
         

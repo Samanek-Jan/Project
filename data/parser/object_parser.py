@@ -1,30 +1,25 @@
 from copy import deepcopy
 import logging
 from typing import List
+from data.parser.parser_exceptions import ParsingStructException
+from data.parser.parsing_object import PARSED_OBJECT_TEMPLATE
 
-from data.parser.parser_exceptions import ParsingClassException
-from data.parser.parsing_object import PARSED_CLASS_TEMPLATE
 
+class ObjectParser:
 
-class ClassParser:
-
-    logger = logging.getLogger('ClassParser')
-    
+    logger = logging.getLogger('ObjectParser')
 
     def process(self, lines : List[str], is_gpu : bool):
+        self.parsed_object = deepcopy(PARSED_OBJECT_TEMPLATE) 
         self.logger.debug('Processing struct')
-        self.parsed_class = deepcopy(PARSED_CLASS_TEMPLATE)
         content = "\n".join(lines)
         
         body = self.__process_comment(content)
         
-        if body.strip() == "":
-            return None
-        
-        self.parsed_class["body"] = body
-        self.parsed_class["type"] = "class"
-        self.parsed_class["is_gpu"] = is_gpu
-        return self.parsed_class
+        self.parsed_object["body"] = body
+        self.parsed_object["type"] = "object"
+        self.parsed_object["is_gpu"] = is_gpu
+        return self.parsed_object
 
 
     def __process_comment(self, content : str) -> str:
@@ -54,8 +49,8 @@ class ClassParser:
                 if end_comment > -1:
                     char_count += end_comment
                     comment.append(line[:end_comment])
-                    self.parsed_class["comment"] = "\n".join(comment)
-                    return content[char_count:].strip()         
+                    self.parsed_object["comment"] = "\n".join(comment)
+                    return content[char_count:].strip()      
                 else:
                     char_count += len(line)
                     comment.append(line.rstrip())
@@ -63,13 +58,13 @@ class ClassParser:
         elif lines[0].lstrip().startswith("//"):
             for line in lines:
                 if not line.lstrip().startswith("//"):
-                    self.parsed_class["comment"] = "\n".join(comment)
+                    self.parsed_object["comment"] = "\n".join(comment)
                     return content[char_count:].strip()
                 else:
                     char_count += len(line)
                     comment.append(line.rstrip())        
         else:
-            self.parsed_class["comment"] = ""
+            self.parsed_object["comment"] = ""
             return content.strip()
         
     def __throw_exception(self, debugger_error : str, exception_error : str) -> None:
@@ -85,4 +80,4 @@ class ClassParser:
         """
 
         self.logger.error(debugger_error)
-        raise ParsingClassException(exception_error)
+        raise ParsingStructException(exception_error)

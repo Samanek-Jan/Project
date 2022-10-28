@@ -2,7 +2,12 @@ __init__.py
 __pycache__/
 .pytest_cache/
 .vscode/
-data/processed
+data/processed/*.data.json
 data/raw
+<<<<<<< HEAD
 data/tokenizer/
 test/test_data/
+=======
+test/test_data
+data/tokenizer/
+>>>>>>> development/dataset
