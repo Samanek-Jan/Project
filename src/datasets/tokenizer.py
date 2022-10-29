@@ -14,10 +14,11 @@ from datasets.dataset_errors import WrongParameterError
 
 SPECIAL_TOKENS = ["[BOSCUDA]", "[BOSCPP]", "[EOS]", "[UNK]", "[PAD]"]
 LOWERCASE = False
+SUBWORD_PREFIX = '##'
 
 
 def define_tokenizer(vocab_size: int):
-    model = BPE(unk_token="[UNK]", continuing_subword_prefix='##')
+    model = BPE(unk_token="[UNK]", continuing_subword_prefix=SUBWORD_PREFIX)
     trainer = BpeTrainer(
         vocab_size=vocab_size,
         special_tokens=SPECIAL_TOKENS,
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     print("\nTesting the tokenizer...\n")
     tokenizer = Tokenizer.from_file(args.output_file)  # this is how to load the save tokenizer
     texts = [
-        """One of the most impressive long term hobby projects is Robert's Rocket Project. He started building a 100 lbf liquid engine in 2001, fired a regeneratively cooled version in 2007, started building a regen 250 lbf in 2008.""",
+        """One of the most impressive long term hobby projects is Robert's Rocket Project.\n\n\n He started building a 100 lbf liquid engine in 2001, fired a regeneratively cooled version in 2007, started building a regen 250 lbf in 2008.""",
         """Det globale fondet har selv hatt finansielle utfordringer på grunn av finanskrisen og frys av penger fra givere etter mislighetssaker i enkelte mottakerland.""",
     ]
     for text in texts:

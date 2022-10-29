@@ -1,17 +1,22 @@
 import os, sys, json
 import logging
-from typing import List, Union
+from typing import List
 import torch
+import torch.nn.functional as F
 import random
 from tqdm import tqdm
 
 from datasets.data_sampler import DataSampler
 from datasets.dataset_errors import EmptyDatasetError, WrongParameterError
 
+from config import DEVICE
+
+
 class Dataset(torch.utils.data.Dataset):
     
     def __init__(self, 
-                 in_folder : str, 
+                 in_folder : str,
+                 tokenizer_path : str,
                  epoch_len : int, 
                  shuffle : bool, 
                  samples_per_obj : int,
@@ -26,7 +31,7 @@ class Dataset(torch.utils.data.Dataset):
         self.shuffle = shuffle
         self.sample_buffer = []
         self.samples_per_obj = samples_per_obj
-        self.data_sampler = DataSampler(**data_sampler_kwargs)
+        self.data_sampler = DataSampler(tokenizer_path, **data_sampler_kwargs)
         
         self.data = []
         
@@ -81,16 +86,52 @@ class Dataset(torch.utils.data.Dataset):
         is_gpu = sample["is_gpu"]
         return x, y, is_gpu
 
+class CollateFunctor:
+    def __init__(self, pad_id: int):
+        self.pad_id = pad_id
+
+    def __call__(self, sentences: list):
+        source_ids, target_ids, source_str, target_str = zip(*sentences)
+        source_ids, source_mask = self.collate_sentences(source_ids)
+        target_ids, target_mask = self.collate_sentences(target_ids)
+        return (source_ids, source_mask), (target_ids, target_mask), (source_str, target_str)
+
+    def collate_sentences(self, sentences: list):
+        lengths = [sentence.size(0) for sentence in sentences]
+        max_length = max(lengths)
+
+        subword_ids = torch.stack([
+            F.pad(sentence, (0, max_length - length), value=self.pad_id)
+            for length, sentence in zip(lengths, sentences)
+        ])
+        attention_mask = subword_ids == self.pad_id
+
+        return subword_ids.to(DEVICE), attention_mask.to(DEVICE)
+
 
 if __name__ == "__main__":
-    data_sampler_kwargs = {"min_x" : 50, "max_x" : 150, "min_y" : 10, "max_y" : 50}
+    from tokenizers import Tokenizer
+    data_sampler_kwargs = {"min_x" : 10, "max_x" : 50, "min_y" : 5, "max_y" : 20}
     in_folder_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed"
-    dataset = Dataset(in_folder_path, 10, True, 5,**data_sampler_kwargs)
+    tokenizer_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_10000.json"
+    dataset = Dataset(in_folder_path, tokenizer_path, 10, True, 5,**data_sampler_kwargs)
+    tokenizer : Tokenizer = Tokenizer.from_file(tokenizer_path)
+    
+    # for i in tqdm(range(10000)):
+    #     x, y, is_gpu = dataset.__getitem__(0)
     
     while True:
         x, y, is_gpu = dataset.__getitem__(0)
-        print(f"""x = {x}\ny = {y}\nis_gpu = {is_gpu}\n------------------------------------------\n""")
-        
+        print([tokenizer.id_to_token(id) for id in x])
+        print()
+        print(tokenizer.decode(x))
+        print()
+        print([tokenizer.id_to_token(id) for id in y])
+        print()
+        print(tokenizer.decode(y))
+        print()
+        print(f"is_gpu = {is_gpu}\n------------------------------------------\n""")
+
         inp = input()
         if inp.lower() == "exit":
             break 
