@@ -56,15 +56,20 @@ class DataSampler:
             while x_size < content_size and end_token.startswith(SUBWORD_PREFIX):
                 x_size += 1
                 end_token = tokens[content_size-x_size]
-                
-            return tokens[content_size-x_size:]
+            
+            tokens = tokens[content_size-x_size:]    
+
         else:
             end_token = tokens[pivot - x_size]
             while x_size < content_size - pivot and x_size < pivot and end_token.startswith(SUBWORD_PREFIX):
                 x_size += 1
                 end_token = tokens[content_size - x_size]
                 
-            return tokens[pivot - x_size : pivot]
+            tokens = tokens[pivot - x_size : pivot]
+            
+        x_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
+        x_str = self.tokenizer.decode(x_ids, skip_special_tokens=False)
+        return x_ids, x_str
 
     def __align_y(self, tokens : List[str], y_size : int, pivot : int = 0):
         content_size = len(tokens)
@@ -74,7 +79,12 @@ class DataSampler:
             y_size += 1
             end_token = tokens[pivot + y_size - 1]
             
-        return tokens[pivot : pivot + y_size]
+        tokens = tokens[pivot : pivot + y_size]
+        y_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
+        y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
+        
+        return y_ids, y_str
+        
     
     def __get_basic_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
         
@@ -92,12 +102,16 @@ class DataSampler:
             x_size = random.randint(self.min_x, min(self.max_x, len(x)))
             y_size = random.randint(self.min_y, min(self.max_y, len(y)))
                     
-            x = self.__align_x(x, x_size)
-            y = self.__align_y(y, y_size)
+            x, x_str = self.__align_x(x, x_size)
+            y, y_str = self.__align_y(y, y_size)
         
-        return {"x" : self.tokenizer.encode(x, is_pretokenized=True).ids, 
-                "y" : self.tokenizer.encode(y, is_pretokenized=True).ids, 
-                "is_gpu" : obj.get("is_gpu", False)}
+        return {
+                "x" : x, 
+                "x_str" : x_str,
+                "y" : y, 
+                "y_str" : y_str,
+                "is_gpu" : obj.get("is_gpu", False)
+               }
     
     def __get_random_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
         tokens = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "") + obj.get("body", "")).tokens
@@ -108,17 +122,21 @@ class DataSampler:
         y_size = random.randint(self.min_y, min(self.max_y, len(tokens) - x_size))
         pivot = random.randint(x_size, len(tokens) - y_size)
         
-        x = self.__align_x(tokens, x_size, pivot)
-        y = self.__align_y(tokens, y_size, pivot)
+        x, x_str = self.__align_x(tokens, x_size, pivot)
+        y, y_str = self.__align_y(tokens, y_size, pivot)
         
-        return {"x" : self.tokenizer.encode(x, is_pretokenized=True).ids, 
-                "y" : self.tokenizer.encode(y, is_pretokenized=True).ids, 
-                "is_gpu" : obj.get("is_gpu", False)}
+        return {
+                "x" : x, 
+                "x_str" : x_str,
+                "y" : y, 
+                "y_str" : y_str,
+                "is_gpu" : obj.get("is_gpu", False)
+               }
                 
     def sample(self, 
                parsed_objects : List[Dict[str, str]], 
                samples_per_obj : int = 1, 
-               max_tries : int = None)              -> List[List]:
+               max_tries : int = None)              -> List[Dict]:
 
         samples = []
         
@@ -158,3 +176,9 @@ class DataSampler:
 
         
         return samples
+    
+    def get_token_id(self, token : str) -> int:
+        return self.tokenizer.token_to_id(token)
+    
+    def get_vocab_size(self) -> int:
+        return self.tokenizer.get_vocab_size()

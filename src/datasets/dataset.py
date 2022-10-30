@@ -5,11 +5,10 @@ import torch
 import torch.nn.functional as F
 import random
 from tqdm import tqdm
+from datasets.config import DEVICE
 
 from datasets.data_sampler import DataSampler
 from datasets.dataset_errors import EmptyDatasetError, WrongParameterError
-
-from config import DEVICE
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -82,31 +81,42 @@ class Dataset(torch.utils.data.Dataset):
         
         sample = self.sample_buffer.pop(0)
         x = sample["x"]
+        x_str = sample["x_str"] 
         y = sample["y"]
+        y_str = sample["y_str"] 
         is_gpu = sample["is_gpu"]
-        return x, y, is_gpu
+        return (x, x_str), (y, y_str), is_gpu
+    
+    
+    def get_token_id(self, token : str) -> int:
+        return self.data_sampler.get_token_id(token)
+    
+    def get_vocab_size(self) -> int:
+        return self.data_sampler.get_vocab_size()
+        
 
 class CollateFunctor:
     def __init__(self, pad_id: int):
         self.pad_id = pad_id
 
-    def __call__(self, sentences: list):
-        source_ids, target_ids, source_str, target_str = zip(*sentences)
-        source_ids, source_mask = self.collate_sentences(source_ids)
-        target_ids, target_mask = self.collate_sentences(target_ids)
-        return (source_ids, source_mask), (target_ids, target_mask), (source_str, target_str)
+    def __call__(self, samples: list):
+        (x_ids, x_str), (y_ids, y_str), cuda_map = zip(*samples)
+        x_ids, x_mask = self.collate_sentences(x_ids)
+        y_ids, y_mask = self.collate_sentences(y_ids)
+        return (x_ids, x_mask), (y_ids, y_mask), (x_str, y_str), cuda_map
 
-    def collate_sentences(self, sentences: list):
-        lengths = [sentence.size(0) for sentence in sentences]
+    def collate_sentences(self, samples: list):
+        lengths = [sentence.size(0) for sentence in samples]
         max_length = max(lengths)
 
         subword_ids = torch.stack([
             F.pad(sentence, (0, max_length - length), value=self.pad_id)
-            for length, sentence in zip(lengths, sentences)
+            for length, sentence in zip(lengths, samples)
         ])
         attention_mask = subword_ids == self.pad_id
 
         return subword_ids.to(DEVICE), attention_mask.to(DEVICE)
+    
 
 
 if __name__ == "__main__":

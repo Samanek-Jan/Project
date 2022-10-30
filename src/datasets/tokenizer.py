@@ -8,11 +8,10 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.processors import TemplateProcessing
 from tokenizers.decoders import WordPiece
 from tokenizers import pre_tokenizers, Regex, normalizers
+from datasets.config import SPECIAL_TOKENS
 
 from datasets.dataset_errors import WrongParameterError
 
-
-SPECIAL_TOKENS = ["[BOSCUDA]", "[BOSCPP]", "[EOS]", "[UNK]", "[PAD]"]
 LOWERCASE = False
 SUBWORD_PREFIX = '##'
 

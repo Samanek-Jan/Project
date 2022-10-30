@@ -6,10 +6,12 @@ import torchmetrics
 import tqdm
 import argparse
 import transformers
+from datasets.config import PAD_TOKEN
 
-from datasets.dataset import Dataset
+from datasets.dataset import CollateFunctor, Dataset
 from model.baseline.config import BATCH_SIZE, DEVICE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
 from model.baseline.linear_lr import LinearLR
+from model.baseline.models import Model
 from model.baseline.search import GreedySearch
 from model.baseline.transformer import Transformer
 
@@ -49,12 +51,12 @@ def main():
     
     train_dataset = Dataset(args.train_folder, epoch_len=args.epoch_size, samples_per_obj=10, **data_sampler_kwargs)
     valid_dataset = Dataset(args.valid_folder, epoch_len=args.epoch_size//10, samples_per_obj=10, **data_sampler_kwargs)
-    collate_f = CollateFunctor(PAD_ID)
+    collate_f = CollateFunctor(train_dataset.get_token_id(PAD_TOKEN))
     
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,  drop_last=True, collate_fn=collate_f)
     valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False, collate_fn=collate_f)
     
-    model = Transformer(**transformer_kwargs).to(DEVICE)
+    model = Model(train_dataset.get_vocab_size(), args.embedd_dim, **transformer_kwargs).to(DEVICE)
     param_n = get_n_params(model)
     logger.info(f"Model params num. = {param_n}")
     
@@ -93,12 +95,12 @@ def train_and_test(model,
         pbar = tqdm(train_dataloader, leave=False)
         model.train()
 
-        for x, y, cuda_map in pbar:
+        for x, y, (x_str, y_str), cuda_map in pbar:
             optimizer.zero_grad()            
             prediction, loss = model(x, y, cuda_map)
             prediction = prediction.argmax(-1)
             prediction_str = train_dataloader.dataset.tokenizer.decode_batch(prediction.tolist(), skip_special_tokens=True)
-            bleu_score.update(prediction_str, [[sentence] for sentence in target_str])
+            bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
             
             pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
             # print(f"loss = {loss.item():.4f}")
@@ -134,9 +136,6 @@ def train_and_test(model,
         
         if bleu > max_bleu:
             max_bleu = bleu
-        # elif bleu < max_bleu*0.8 and epoch > min_n_epochs:
-        #     logger.info(f"Validation bleu score is decresing from {max_bleu:.3f} to {bleu:.3f}. Ending training loop...")
-        #     break
            
     return best_version
 
@@ -161,9 +160,6 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
         sources_list.extend(sources_str)
         sentences_target.extend([[sentence] for sentence in targets_str])
         sentences_pred.extend(predictions_str)
-        
-        # if i == 3:
-        #     break
 
     bleu_score = torchmetrics.BLEUScore()(sentences_pred, sentences_target)
 

@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model.baseline.config import DEVICE
+from model.baseline.config import DEVICE, MAX_Y
 
 class GreedySearch:
-    def __init__(self, model, tokenizer, max_length=128):
+    def __init__(self, model, tokenizer, max_length=MAX_Y):
         self.model = model
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -38,7 +38,7 @@ class GreedySearch:
 
 
 class BeamSearch:
-    def __init__(self, model, tokenizer, beam_size=4, max_length=128):
+    def __init__(self, model, tokenizer, beam_size=4, max_length=MAX_Y):
         self.model = model
         self.tokenizer = tokenizer
         self.beam_size = beam_size

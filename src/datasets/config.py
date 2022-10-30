@@ -1,4 +1,9 @@
 import torch
 
-
+CUDA_BOS_TOKEN = "[BOSCUDA]"
+CPP_BOS_TOKEN = "[BOSCPP]"
+EOS_TOKEN = "[EOS]"
+UNK_TOKEN = "[UNK]"
+PAD_TOKEN = "[PAD]"
+SPECIAL_TOKENS = [CUDA_BOS_TOKEN, CPP_BOS_TOKEN, EOS_TOKEN, UNK_TOKEN, PAD_TOKEN]
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
