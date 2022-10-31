@@ -1,19 +1,20 @@
 from copy import deepcopy
 import logging
 import os
+from tokenizers import Tokenizer
 import torch
+import torch.nn as nn
 import torchmetrics
-import tqdm
+from tqdm import tqdm
 import argparse
 import transformers
-from datasets.config import PAD_TOKEN
 
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, PAD_TOKEN
 from datasets.dataset import CollateFunctor, Dataset
 from model.baseline.config import BATCH_SIZE, DEVICE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
 from model.baseline.linear_lr import LinearLR
 from model.baseline.models import Model
 from model.baseline.search import GreedySearch
-from model.baseline.transformer import Transformer
 
 
 def main():
@@ -23,14 +24,14 @@ def main():
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--tokenizer", "-t", required=True, type=str)
     argument_parser.add_argument("--train_folder", "-f", required=True, type=str)
-    argument_parser.add_argument("--valid_foldef", "-v", required=True, type=str)
+    argument_parser.add_argument("--valid_folder", "-v", required=True, type=str)
     argument_parser.add_argument("--embedd_dim", "-e", type=int, default=300)
     argument_parser.add_argument("--num_encoder_layers", "-c", type=int, default=3)
     argument_parser.add_argument("--num_decoder_layers", "-o", type=int, default=2)
     argument_parser.add_argument("--num_heads", "-s", type=int, default=5)
     argument_parser.add_argument("--dropout", "-d", type=float, default=0.1)
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
-    argument_parser.add_argument("--epoch_size", "-s", type=int, default=10000)
+    argument_parser.add_argument("--epoch_size", "-i", type=int, default=10000)
     args = argument_parser.parse_args()
     
     data_sampler_kwargs = {
@@ -49,14 +50,17 @@ def main():
                         "dropout" : args.dropout
                         }
     
-    train_dataset = Dataset(args.train_folder, epoch_len=args.epoch_size, samples_per_obj=10, **data_sampler_kwargs)
-    valid_dataset = Dataset(args.valid_folder, epoch_len=args.epoch_size//10, samples_per_obj=10, **data_sampler_kwargs)
-    collate_f = CollateFunctor(train_dataset.get_token_id(PAD_TOKEN))
+    train_dataset = Dataset(in_folder=args.train_folder, epoch_len=args.epoch_size, samples_per_obj=10, **data_sampler_kwargs)
+    valid_dataset = Dataset(args.valid_folder, epoch_len=args.epoch_size//10, shuffle=True, samples_per_obj=10, **data_sampler_kwargs)
+    PAD_ID = train_dataset.get_token_id(PAD_TOKEN)
+    collate_f = CollateFunctor(PAD_ID)
     
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,  drop_last=True, collate_fn=collate_f)
     valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False, collate_fn=collate_f)
     
-    model = Model(train_dataset.get_vocab_size(), args.embedd_dim, **transformer_kwargs).to(DEVICE)
+    loss_fce = nn.CrossEntropyLoss(ignore_index=-1)
+    
+    model = Model(train_dataset.get_vocab_size(), args.embedd_dim, loss_fce, PAD_ID, **transformer_kwargs).to(DEVICE)
     param_n = get_n_params(model)
     logger.info(f"Model params num. = {param_n}")
     
@@ -95,11 +99,11 @@ def train_and_test(model,
         pbar = tqdm(train_dataloader, leave=False)
         model.train()
 
-        for x, y, (x_str, y_str), cuda_map in pbar:
+        for x, y, (x_str, y_str) in pbar:
             optimizer.zero_grad()            
-            prediction, loss = model(x, y, cuda_map)
+            prediction, loss = model(x, y)
             prediction = prediction.argmax(-1)
-            prediction_str = train_dataloader.dataset.tokenizer.decode_batch(prediction.tolist(), skip_special_tokens=True)
+            prediction_str = train_dataloader.dataset.decode_batch(prediction.tolist(), skip_special_tokens=True)
             bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
             
             pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
@@ -127,7 +131,7 @@ def train_and_test(model,
         
         print(f"Training bleu score = {score_val:.3f}")
         print(f"Example of translations")
-        rand_inds = torch.randint(0, len(target_sentences), (3,))
+        rand_inds = torch.randint(0, len(target_sentences), (2,))
         for i in rand_inds:
             print(source_sentences[i])
             print(target_sentences[i])
@@ -146,15 +150,19 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
     sources_list = []
     sentences_target = []
     sentences_pred = []
-    searcher = search_class(model, test_dataloader.dataset.tokenizer)
+    tokenizer : Tokenizer = test_dataloader.dataset.get_tokenizer()
+    searcher = search_class(model, tokenizer)
 
     if pbar:
         test_dataloader = tqdm(test_dataloader, leave=False)
 
     # bleu_score = torchmetrics.BLEUScore()
-    for i, ((sources, sources_mask), (_, _), (sources_str, targets_str)) in enumerate(test_dataloader):
+    for i, ((sources, sources_mask), (y_ids, _), (sources_str, targets_str)) in enumerate(test_dataloader):
         
-        predictions_str = searcher(sources, sources_mask)
+        y_bos = y_ids[:,0]
+        cuda_bos = tokenizer.token_to_id(CUDA_BOS_TOKEN)
+        cuda_mask = torch.where(y_bos == cuda_bos, True, False)
+        predictions_str = searcher(sources, sources_mask, cuda_mask)
         # bleu_score.update(predictions_str, targets_str)
         
         sources_list.extend(sources_str)

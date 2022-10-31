@@ -15,10 +15,9 @@ class Dataset(torch.utils.data.Dataset):
     
     def __init__(self, 
                  in_folder : str,
-                 tokenizer_path : str,
                  epoch_len : int, 
-                 shuffle : bool, 
                  samples_per_obj : int,
+                 shuffle : bool = True, 
                  max_file_buffer : int = 1000, 
                  **data_sampler_kwargs) -> None:
         super().__init__()
@@ -30,7 +29,7 @@ class Dataset(torch.utils.data.Dataset):
         self.shuffle = shuffle
         self.sample_buffer = []
         self.samples_per_obj = samples_per_obj
-        self.data_sampler = DataSampler(tokenizer_path, **data_sampler_kwargs)
+        self.data_sampler = DataSampler(**data_sampler_kwargs)
         
         self.data = []
         
@@ -50,6 +49,7 @@ class Dataset(torch.utils.data.Dataset):
         
         next_file_batch_size = min(len(files) - self.file_idx, self.max_file_buffer - self.file_idx)
         pb = tqdm(range(self.file_idx, self.file_idx + next_file_batch_size), leave=False)
+        pb.set_description("Caching data")
         for i in pb:
             
             if i >= len(files):
@@ -71,21 +71,21 @@ class Dataset(torch.utils.data.Dataset):
             random.shuffle(self.data)
     
     def __getitem__(self, _) -> List:
-        
-        if len(self.data) == 0:
-            self.__load_data()
                     
-        if len(self.sample_buffer) == 0:
+        while len(self.sample_buffer) == 0:
+            if len(self.data) == 0:
+                self.__load_data()
+                
             parsed_objs = self.data.pop(0)
             self.sample_buffer = self.data_sampler.sample(parsed_objs, self.samples_per_obj)
         
         sample = self.sample_buffer.pop(0)
-        x = sample["x"]
+        x = torch.tensor(sample["x"])
         x_str = sample["x_str"] 
-        y = sample["y"]
-        y_str = sample["y_str"] 
-        is_gpu = sample["is_gpu"]
-        return (x, x_str), (y, y_str), is_gpu
+        y = torch.tensor(sample["y"])
+        y_str = sample["y_str"]
+        
+        return x, x_str, y, y_str
     
     
     def get_token_id(self, token : str) -> int:
@@ -93,6 +93,12 @@ class Dataset(torch.utils.data.Dataset):
     
     def get_vocab_size(self) -> int:
         return self.data_sampler.get_vocab_size()
+    
+    def decode_batch(self, batch, *args, **kwargs):
+        return self.data_sampler.decode_batch(batch, *args, **kwargs)
+    
+    def get_tokenizer(self):
+        return self.data_sampler.get_tokenizer()
         
 
 class CollateFunctor:
@@ -100,10 +106,10 @@ class CollateFunctor:
         self.pad_id = pad_id
 
     def __call__(self, samples: list):
-        (x_ids, x_str), (y_ids, y_str), cuda_map = zip(*samples)
+        x_ids, x_str, y_ids, y_str = zip(*samples)
         x_ids, x_mask = self.collate_sentences(x_ids)
         y_ids, y_mask = self.collate_sentences(y_ids)
-        return (x_ids, x_mask), (y_ids, y_mask), (x_str, y_str), cuda_map
+        return (x_ids, x_mask), (y_ids, y_mask), (x_str, y_str)
 
     def collate_sentences(self, samples: list):
         lengths = [sentence.size(0) for sentence in samples]

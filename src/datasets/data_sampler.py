@@ -3,6 +3,7 @@ from typing import Dict, List
 import random
 import time
 from tokenizers import Tokenizer
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN
 
 from datasets.dataset_errors import TokenizerError, WrongParameterError
 from datasets.tokenizer import SUBWORD_PREFIX
@@ -39,8 +40,8 @@ class DataSampler:
         self.max_y = max_y
         
         # Check if first data from given object 
-        self.basic_first_samples = kwargs["init_first_sample"] if "init_first_sample" in kwargs else True
-    
+        self.basic_first_samples = kwargs.get("init_first_sample", True)
+        
     def __shuffle_objects(self, parsed_objects : List[Dict[str, str]]) -> Dict[str, str]:
         random.shuffle(parsed_objects)
         return parsed_objects
@@ -68,10 +69,11 @@ class DataSampler:
             tokens = tokens[pivot - x_size : pivot]
             
         x_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
-        x_str = self.tokenizer.decode(x_ids, skip_special_tokens=False)
+        # x_ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
+        x_str = self.tokenizer.decode(x_ids, skip_special_tokens=True)
         return x_ids, x_str
 
-    def __align_y(self, tokens : List[str], y_size : int, pivot : int = 0):
+    def __align_y(self, tokens : List[str], y_size : int, is_cuda_snippet : bool, pivot : int = 0):
         content_size = len(tokens)
         
         end_token = tokens[pivot + y_size - 1]
@@ -81,7 +83,9 @@ class DataSampler:
             
         tokens = tokens[pivot : pivot + y_size]
         y_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
-        y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
+        y_ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
+        y_ids.append(self.tokenizer.token_to_id(EOS_TOKEN))
+        y_str = self.tokenizer.decode(y_ids, skip_special_tokens=True)
         
         return y_ids, y_str
         
@@ -103,14 +107,13 @@ class DataSampler:
             y_size = random.randint(self.min_y, min(self.max_y, len(y)))
                     
             x, x_str = self.__align_x(x, x_size)
-            y, y_str = self.__align_y(y, y_size)
+            y, y_str = self.__align_y(y, y_size, obj.get("is_gpu", False))
         
         return {
                 "x" : x, 
                 "x_str" : x_str,
                 "y" : y, 
-                "y_str" : y_str,
-                "is_gpu" : obj.get("is_gpu", False)
+                "y_str" : y_str
                }
     
     def __get_random_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
@@ -123,7 +126,7 @@ class DataSampler:
         pivot = random.randint(x_size, len(tokens) - y_size)
         
         x, x_str = self.__align_x(tokens, x_size, pivot)
-        y, y_str = self.__align_y(tokens, y_size, pivot)
+        y, y_str = self.__align_y(tokens, y_size, obj.get("is_gpu", False), pivot)
         
         return {
                 "x" : x, 
@@ -182,3 +185,9 @@ class DataSampler:
     
     def get_vocab_size(self) -> int:
         return self.tokenizer.get_vocab_size()
+    
+    def decode_batch(self, batch, *args, **kwargs):
+        return self.tokenizer.decode_batch(batch, *args, **kwargs)
+    
+    def get_tokenizer(self):
+        return self.tokenizer

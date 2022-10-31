@@ -1,3 +1,4 @@
+from typing import Callable
 import torch
 import torch.nn as nn
 import math
@@ -9,25 +10,28 @@ from model.baseline.transformer import Transformer
 class Model(nn.Module):
     def __init__(self, num_embedding : int, 
                  embedding_dim : int, 
-                 loss_fce, 
+                 loss_fce : Callable, 
+                 pad_id : int,
                  **transformer_kwargs):
         super().__init__()
-        self.embedding = nn.Embedding(num_embedding, embedding_dim, padding_idx=PAD_TOKEN)
+        self.embedding = nn.Embedding(num_embedding, embedding_dim, padding_idx=pad_id)
         self.embedding.weight.data /= math.sqrt(embedding_dim)  # descale the weights
         self.transformer = Transformer(**transformer_kwargs)
         self.head = nn.Linear(transformer_kwargs["hidden_size"], num_embedding)
         self.head.weight = self.embedding.weight
         self.loss_fce = loss_fce
+        self.pad_id = pad_id
 
-    def forward(self, x, y):
+    def forward(self, x : tuple, y : tuple):
         x_ids, x_mask = x
-        # print(f"x_ids shape = {x_ids.shape}, y_ids shape = {y[0].shape}")
-        source_encoding = self.encode_source(x_ids, x_mask)
-        # print(f"source_encodings shape = {source_encoding.shape}")
+        y_ids, y_mask = y
         
-        target_prefix = (y[0][:,:-1].to(DEVICE), y[1][:,:-1].to(DEVICE))
+        source_encoding = self.encode_source(x_ids, x_mask)
+        
+        # Enforcing teacher forcing
+        target_prefix = (y_ids[:,:-1].to(DEVICE), y_mask[:,:-1].to(DEVICE))
         preds = self.decode_step(source_encoding, x_mask, target_prefix)
-        target = y[0][:,1:].to(DEVICE)
+        target = y_ids[:,1:].to(DEVICE)
         
         # print(f"target shape = {target.shape}")
         loss = self.loss_fce(preds.permute(0, 2, 1), target)
@@ -42,7 +46,7 @@ class Model(nn.Module):
     def decode_step(self, source_encoding, source_mask, target_prefix) -> torch.Tensor:
         if type(target_prefix) is torch.Tensor:
             embeddings = self.embedding(target_prefix)
-            target_mask = target_prefix == PAD_TOKEN
+            target_mask = target_prefix == self.pad_id
             # target_mask = None
             target = self.transformer.decoder(embeddings, target_mask, source_encoding, source_mask)[:,-1]
         else:

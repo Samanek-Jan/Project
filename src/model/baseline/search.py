@@ -1,19 +1,22 @@
+from tokenizers import Tokenizer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 
 from model.baseline.config import DEVICE, MAX_Y
+from model.baseline.models import Model
 
 class GreedySearch:
-    def __init__(self, model, tokenizer, max_length=MAX_Y):
+    def __init__(self, model : Model, tokenizer : Tokenizer, max_length : int = MAX_Y):
         self.model = model
         self.tokenizer = tokenizer
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id("[BOSCUDA]")
-        self.bos_cpp_id = tokenizer.token_to_id("[BOSCPP]")
-        self.eos_id = tokenizer.token_to_id("[EOS]")
-        self.pad_id = tokenizer.token_to_id("[PAD]")
+        self.bos_cuda_id = tokenizer.token_to_id(CUDA_BOS_TOKEN)
+        self.bos_cpp_id = tokenizer.token_to_id(CPP_BOS_TOKEN)
+        self.eos_id = tokenizer.token_to_id(EOS_TOKEN)
+        self.pad_id = tokenizer.token_to_id(PAD_TOKEN)
 
     @torch.no_grad()
     def __call__(self, source, source_mask, cuda_mask):
