@@ -30,7 +30,7 @@ def main():
     argument_parser.add_argument("--num_decoder_layers", "-o", type=int, default=2)
     argument_parser.add_argument("--num_heads", "-s", type=int, default=5)
     argument_parser.add_argument("--dropout", "-d", type=float, default=0.1)
-    argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
+    argument_parser.add_argument("--epoch_n", "-n", type=int, default=3)
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=10000)
     args = argument_parser.parse_args()
     

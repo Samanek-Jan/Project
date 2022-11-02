@@ -8,3 +8,4 @@ data/tokenizer/
 test/test_data/
 test/test_data
 data/tokenizer/
+data/parser/skipped_files.log
