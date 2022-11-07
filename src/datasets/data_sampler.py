@@ -69,8 +69,7 @@ class DataSampler:
             tokens = tokens[pivot - x_size : pivot]
             
         x_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
-        # x_ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
-        x_str = self.tokenizer.decode(x_ids, skip_special_tokens=True)
+        x_str = self.tokenizer.decode(x_ids)
         return x_ids, x_str
 
     def __align_y(self, tokens : List[str], y_size : int, is_cuda_snippet : bool, pivot : int = 0):

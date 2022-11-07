@@ -8,7 +8,7 @@ random.seed(SEED)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 LR = 1e-4
 WARMUP_DURATION = 50
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 MIN_X = 10
 MAX_X = 128

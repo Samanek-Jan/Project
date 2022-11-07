@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 import random
 from tqdm import tqdm
-from datasets.config import DEVICE
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, DEVICE
 
 from datasets.data_sampler import DataSampler
 from datasets.dataset_errors import EmptyDatasetError, WrongParameterError
@@ -41,23 +41,22 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return self.epoch_len
 
-    def __load_data(self) -> None:
+    def __load_data(self, next_file_batch_size : int = None) -> None:
         files = os.listdir(self.in_folder)
         
         if len(files) == 0:
             raise EmptyDatasetError()
-        
-        next_file_batch_size = min(len(files) - self.file_idx, self.max_file_buffer - self.file_idx)
+        if next_file_batch_size is None:
+            next_file_batch_size = min(self.max_file_buffer, len(files))
+            
         pb = tqdm(range(self.file_idx, self.file_idx + next_file_batch_size), leave=False)
         pb.set_description("Caching data")
         for i in pb:
-            
-            if i >= len(files):
-                break
         
             if i >= len(files):
                 self.file_idx = 0
-                self.data += self.__load_data()
+                next_file_batch_size = next_file_batch_size - self.file_idx
+                self.data += self.__load_data(next_file_batch_size)
                 break
             
             file = files[i]
@@ -127,26 +126,42 @@ class CollateFunctor:
 
 if __name__ == "__main__":
     from tokenizers import Tokenizer
-    data_sampler_kwargs = {"min_x" : 10, "max_x" : 50, "min_y" : 5, "max_y" : 20}
-    in_folder_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed"
-    tokenizer_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_10000.json"
-    dataset = Dataset(in_folder_path, tokenizer_path, 10, True, 5,**data_sampler_kwargs)
+    in_folder_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/train"
+    tokenizer_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_20000.json"
+    data_sampler_kwargs = {"min_x" : 10, "max_x" : 50, "min_y" : 5, "max_y" : 20, "tokenizer_path" : tokenizer_path}
+    dataset = Dataset(in_folder_path, 10, True, 5,**data_sampler_kwargs)
     tokenizer : Tokenizer = Tokenizer.from_file(tokenizer_path)
     
+    # BOS_CUDA_ID = tokenizer.token_to_id(CUDA_BOS_TOKEN)
+    # BOS_CPP_ID = tokenizer.token_to_id(CPP_BOS_TOKEN)
+    
+    # cpp_sentence_counter = 0
+    # cuda_sentence_counter = 0
     # for i in tqdm(range(10000)):
-    #     x, y, is_gpu = dataset.__getitem__(0)
+    #     x, x_str, y, y_str = dataset.__getitem__(0)
+    #     if y[0] == BOS_CUDA_ID:
+    #         cuda_sentence_counter += 1
+    #     elif y[0] == BOS_CPP_ID:
+    #         cpp_sentence_counter += 1
+    #     else:
+    #         raise ValueError("Weird start id : {}, token: {}".format(y[0], tokenizer.id_to_token(y[0])))
+    
+    # print("Number of sentences:")
+    # print(" - cuda sentence counter: {}".format(cuda_sentence_counter))
+    # print(" - cpp sentence counter: {}".format(cpp_sentence_counter))
+    # print(" - cuda ratio: {:.2%}".format(cuda_sentence_counter / (cuda_sentence_counter + cpp_sentence_counter)))
     
     while True:
-        x, y, is_gpu = dataset.__getitem__(0)
+        x , x_str, y, y_str = dataset.__getitem__(0)
         print([tokenizer.id_to_token(id) for id in x])
         print()
-        print(tokenizer.decode(x))
+        print(tokenizer.decode(x.tolist()))
         print()
         print([tokenizer.id_to_token(id) for id in y])
         print()
-        print(tokenizer.decode(y))
+        print(tokenizer.decode(y.tolist()))
         print()
-        print(f"is_gpu = {is_gpu}\n------------------------------------------\n""")
+        print("\n------------------------------------------\n")
 
         inp = input()
         if inp.lower() == "exit":

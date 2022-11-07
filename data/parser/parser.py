@@ -336,8 +336,8 @@ def parse_folder(in_folder : str,
     print("\tTotal data: %d" % valid_data_counter)
     print("\tTotal char. len: %d" % valid_char_counter)
     
-    print("Train ratio by data: {:.3f}".format(train_data_counter / (train_data_counter + valid_data_counter)))
-    print("Train ratio by char: {:.3f}".format(train_char_counter / (train_char_counter + valid_char_counter)))
+    print("Train ratio by data: {:.2%}".format(train_data_counter / (train_data_counter + valid_data_counter)))
+    print("Train ratio by char: {:.2%}".format(train_char_counter / (train_char_counter + valid_char_counter)))
     
 
 if __name__ == "__main__":

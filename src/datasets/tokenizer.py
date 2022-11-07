@@ -6,6 +6,7 @@ from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.processors import TemplateProcessing
+import tokenizers.decoders as decoders
 from tokenizers.decoders import WordPiece
 from tokenizers import pre_tokenizers, Regex, normalizers
 from datasets.config import SPECIAL_TOKENS
@@ -13,7 +14,7 @@ from datasets.config import SPECIAL_TOKENS
 from datasets.dataset_errors import WrongParameterError
 
 LOWERCASE = False
-SUBWORD_PREFIX = '##'
+SUBWORD_PREFIX = '$'
 
 
 def define_tokenizer(vocab_size: int):
@@ -21,24 +22,20 @@ def define_tokenizer(vocab_size: int):
     trainer = BpeTrainer(
         vocab_size=vocab_size,
         special_tokens=SPECIAL_TOKENS,
-        continuing_subword_prefix='##'
+        continuing_subword_prefix=SUBWORD_PREFIX
     )
     tokenizer = Tokenizer(model)
     tokenizer.normalizer = normalizers.Sequence([
-        normalizers.Replace(Regex("\t"), " "),
-        normalizers.Replace(Regex(" {2,}"), " "),
+        # normalizers.Replace(Regex("\t"), " "),
+        # normalizers.Replace(Regex(" {2,}"), " "),
         normalizers.BertNormalizer(
             lowercase=LOWERCASE,
             clean_text=True,
             strip_accents=False
         )
     ])
-    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-    # tokenizer.post_processor = TemplateProcessing(
-    #     single="[BOS] $0 [EOS]",
-    #     special_tokens=[("[BOS]", 0), ("[EOS]", 1)],
-    # )
-    tokenizer.decoder = WordPiece(prefix='##', cleanup=True)  # we use WordPiece just because of the whitespace cleanup
+    tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+    tokenizer.decoder = WordPiece(prefix=SUBWORD_PREFIX, cleanup=True)  # we use WordPiece just because of the whitespace cleanup
 
     return tokenizer, trainer
 
@@ -59,9 +56,12 @@ def tokenizer_batch_generator(input_folder : str):
     for file in files:
         full_path = os.path.join(input_folder, file)
         if os.path.isdir(full_path):
-            gen = tokenizer_batch_generator(full_path)
-            while gen:
-                yield next(gen)
+            try:
+                gen = tokenizer_batch_generator(full_path)
+                while gen:
+                    yield next(gen)
+            except:
+                ...
                 
         else:
             with open(full_path, "r") as fd:
