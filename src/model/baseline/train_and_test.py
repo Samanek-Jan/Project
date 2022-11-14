@@ -26,8 +26,8 @@ def main():
     argument_parser.add_argument("--train_folder", "-f", required=True, type=str)
     argument_parser.add_argument("--valid_folder", "-v", required=True, type=str)
     argument_parser.add_argument("--embedd_dim", "-e", type=int, default=300)
-    argument_parser.add_argument("--num_encoder_layers", "-c", type=int, default=3)
-    argument_parser.add_argument("--num_decoder_layers", "-o", type=int, default=2)
+    argument_parser.add_argument("--num_encoder_layers", "-c", type=int, default=4)
+    argument_parser.add_argument("--num_decoder_layers", "-o", type=int, default=3)
     argument_parser.add_argument("--num_heads", "-s", type=int, default=5)
     argument_parser.add_argument("--dropout", "-d", type=float, default=0.1)
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=3)
@@ -35,10 +35,10 @@ def main():
     args = argument_parser.parse_args()
     
     data_sampler_kwargs = {
-        "min_x" : 50,
-        "max_x" : 100,
-        "min_y" : 10,
-        "max_y" : 100,
+        "min_x" : 70,
+        "max_x" : 150,
+        "min_y" : 30,
+        "max_y" : 150,
         "tokenizer_path" : args.tokenizer
     }
     
@@ -62,7 +62,7 @@ def main():
     
     model = Model(train_dataset.get_vocab_size(), args.embedd_dim, loss_fce, PAD_ID, **transformer_kwargs).to(DEVICE)
     param_n = get_n_params(model)
-    logger.info(f"Model params num. = {param_n}")
+    print(f"Model params num. = {param_n}")
     
     best_model = train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n)
     best_model["transformer_config"] = transformer_kwargs
@@ -140,6 +140,8 @@ def train_and_test(model,
         
         if bleu > max_bleu:
             max_bleu = bleu
+            
+        torch.cuda.empty_cache()
            
     return best_version
 

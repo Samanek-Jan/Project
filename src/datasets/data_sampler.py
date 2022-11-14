@@ -1,15 +1,14 @@
 import os
 from typing import Dict, List
 import random
-import time
 from tokenizers import Tokenizer
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, RANDOM_SEED
 
 from datasets.dataset_errors import TokenizerError, WrongParameterError
 from datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
-random.seed(time.time())
+random.seed(RANDOM_SEED)
 
 class DataSampler:
     
@@ -101,9 +100,8 @@ class DataSampler:
             return self.__get_random_sample(obj)          
             
         else:
-            
-            x_size = random.randint(self.min_x, min(self.max_x, len(x)))
-            y_size = random.randint(self.min_y, min(self.max_y, len(y)))
+            x_size = min(self.max_x, len(x))
+            y_size = min(self.max_y, len(y))
                     
             x, x_str = self.__align_x(x, x_size)
             y, y_str = self.__align_y(y, y_size, obj.get("is_gpu", False))
