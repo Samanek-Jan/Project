@@ -1,8 +1,6 @@
 from configparser import ParsingError
-from genericpath import isdir
 import json
 import sys, os
-import logging
 import random
 from typing import Dict, Generator, Iterable, List
 from data.parser.class_parser import ClassParser
@@ -51,6 +49,7 @@ class Parser:
         self.parsedObjectList     : List               = []
         self.is_current_file_gpu  : bool               = False
         self.line_counter         : int                = 1
+        self.is_parsing_comment      : bool               = False
         
 
     def process_file(self, filename : str) -> List:
@@ -107,9 +106,16 @@ class Parser:
         return os.path.isfile(filename)
 
     def __process_file(self, filename : str) -> List:
-        with open(filename, 'r') as fd:
+        with open(filename, 'r', encoding='latin-1') as fd:
             lines = fd.readlines()
             return self.__process_str(lines, filename)
+        
+    def __reset(self):
+        self.parsedObjectList.clear()
+        self.current_status = "r"
+        self.bracket_counter = 0
+        self.line_counter = 1
+        self.is_parsing_comment = False
     
     def __process_str(self, lines : Iterable[str], filename : str) -> List:
         
@@ -122,10 +128,7 @@ class Parser:
             List[ParsedObject]: Lexical list of parsed objects
         """
         
-        self.parsedObjectList.clear()
-        self.current_status = "r"
-        self.bracket_counter = 0
-        self.line_counter = 1
+        self.__reset()
         
         for _, line in enumerate(lines):
             self.current_status = self.automata_states[self.current_status](line)
@@ -135,7 +138,7 @@ class Parser:
                 
     def __ready_parsing_state(self, line : str) -> str:
         line = line.strip()
-        if line.startswith("/*"):                
+        if line.startswith("/*"):
             return self.__parsing_doxygen_state(line) # Return doxygen state
         
         elif line.startswith("//"):
@@ -150,7 +153,10 @@ class Parser:
     
     def __parsing_doxygen_state(self, line: str) -> str:
         self.current_code_block.append(line.rstrip())
-        return READY_AUTOMATA_STATE if line.rstrip().endswith("*/") else DOXYGEN_AUTOMATA_STATE # If doxygen ends, return code state else return doxygen state
+        if line.rstrip().endswith("*/"):
+            return READY_AUTOMATA_STATE
+        else:
+            return DOXYGEN_AUTOMATA_STATE
             
         
     def __parsing_one_line_comment_state(self, line: str) -> str:
@@ -159,9 +165,9 @@ class Parser:
     
     def __parsing_code_state(self, line: str) -> str:
         
-        if self.current_parsing_type != None:
+        if self.current_parsing_type is not None:
 
-            self.current_code_block.append(line.rstrip())            
+            self.current_code_block.append(line.rstrip())
             self.bracket_counter += self.count_brackets(line)
             
             if self.bracket_counter == 0:
@@ -192,19 +198,19 @@ class Parser:
                 self.current_parsing_type = "struct"
             
             # Is probably definition of a function
-            elif self.current_parsing_type == None and self.bracket_counter > 0:
+            elif self.bracket_counter > 0:
                 self.current_parsing_type = "function"
-            
-            # Only declaration
-            elif line.find(";") != -1:
-                self.current_parsing_type = "object" if self.current_parsing_type == None else self.current_parsing_type
-                return self.__object_ready_state()
             
             # Error parsing brackets
             elif self.bracket_counter < 0:
                 message = f"Error counting brackets with result {self.bracket_counter} on line {self.line_counter}\n"
                 # self.logger.error(message)
                 raise BracketCountErrorException(message)
+            
+            # Only declaration
+            elif line.find(";") != -1:
+                self.current_parsing_type = "object" if self.current_parsing_type == None else self.current_parsing_type
+                return self.__object_ready_state()
             
             return CODE_AUTOMATA_STATE
 
@@ -243,6 +249,15 @@ class Parser:
                 
         
     def count_brackets(self, line : str):
+        if line.lstrip().startswith("/*"):
+            if not line.rstrip().endswith("*/"):
+                self.is_parsing_comment = True
+            return 0
+        elif self.is_parsing_comment or line.lstrip().startswith("//"):
+            if line.rstrip().endswith("*/"):
+                self.is_parsing_comment = False
+            return 0
+        
         d = {"{" : 1, "}" : -1}
         return sum([d[c] for c in line if c in d])
 
@@ -324,7 +339,7 @@ def parse_folder(in_folder : str,
                 json.dump(parsed_objects, fd)
         except Exception as e:
             # print("Skipped file\n")
-            skipped_files.append(file)      
+            skipped_files.append({"file" : file, "exception" : str(e)})    
             
     print("Train data stats:")
     print("\tTotal files: %d" % train_files_counter)
@@ -338,18 +353,27 @@ def parse_folder(in_folder : str,
     
     print("Train ratio by data: {:.2%}".format(train_data_counter / (train_data_counter + valid_data_counter)))
     print("Train ratio by char: {:.2%}".format(train_char_counter / (train_char_counter + valid_char_counter)))
+
+
+def clear_folders(train_folder, valid_folder):
+    [os.remove(os.path.join(train_folder, file)) for file in os.listdir(train_folder) if os.path.isfile(os.path.join(train_folder, file))]
+    [os.remove(os.path.join(valid_folder, file)) for file in os.listdir(valid_folder) if os.path.isfile(os.path.join(valid_folder, file))]
     
 
 if __name__ == "__main__":
-    print("Processing Raw data. Don't forget to clear folders!")
     in_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/raw"
     train_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/train"
     valid_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/valid"
     train_ratio = 0.8
+    
+    print("Cleaning folders...", end="\r")
+    clear_folders(train_folder, valid_folder)
+    
     parse_folder(in_folder, train_folder, valid_folder, train_ratio)
     
     if len(skipped_files) > 0:
         with open("skipped_files.log", "w") as fd:
-            fd.write('\n'.join(skipped_files) + '\n')
+            for skipped_file in skipped_files:
+                fd.write("{}\n{}".format(skipped_file["file"], skipped_file["exception"]))
     
     
