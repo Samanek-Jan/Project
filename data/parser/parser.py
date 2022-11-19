@@ -3,9 +3,9 @@ import json
 import sys, os
 import random
 from typing import Dict, Generator, Iterable, List
-from data.parser.class_parser import ClassParser
-from data.parser.function_parser import FunctionParser
-from data.parser.object_parser import ObjectParser
+import data.parser.class_parser as class_parser
+import data.parser.function_parser as function_parser
+import data.parser.object_parser as object_parser
 from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, InvalidTypeException, ParsingFunctionException
 from data.parser.struct_parser import StructParser
 from copy import deepcopy
@@ -27,10 +27,10 @@ class Parser:
     def __init__(self):
         # self.logger = logging.getLogger('Parser').setLevel(logging.INFO)
         self.parsers = {
-            "class": ClassParser(),
+            "class": class_parser.ClassParser(),
             "struct": StructParser(),
-            "function": FunctionParser(),
-            "object": ObjectParser(),
+            "function": function_parser.FunctionParser(),
+            "object": object_parser.ObjectParser(),
         }
         
         self.automata_states = {
@@ -49,7 +49,8 @@ class Parser:
         self.parsedObjectList     : List               = []
         self.is_current_file_gpu  : bool               = False
         self.line_counter         : int                = 1
-        self.is_parsing_comment      : bool               = False
+        self.is_parsing_comment   : bool               = False
+        self.filename             : str                = ""
         
 
     def process_file(self, filename : str) -> List:
@@ -65,6 +66,7 @@ class Parser:
         # # self.logger.debug(f'Processing {filename}')
 
         if self.__is_file_valid(filename):
+            self.filename = filename
             self.is_current_file_gpu = filename.split(".")[-1] in GPU_FILE_SUFFIXES
             return self.__process_file(filename)
         return []
@@ -79,6 +81,7 @@ class Parser:
             Generator[List[ParsedObject]]: generator of list of lexical objects for each file
         """
         for filename in filenames:
+            self.filename = filename
             yield self.process_file(filename)
             
     def process_str(self, content : str, filename : str) -> List:
@@ -129,6 +132,7 @@ class Parser:
         """
         
         self.__reset()
+        self.filename = filename
         
         for _, line in enumerate(lines):
             self.current_status = self.automata_states[self.current_status](line)
@@ -240,7 +244,7 @@ class Parser:
             # self.logger.error(message)
             raise ParsingError(message)
         
-        self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, self.is_current_file_gpu))
+        self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, self.is_current_file_gpu, self.filename))
         self.current_status = READY_AUTOMATA_STATE
         self.current_code_block.clear()
         self.current_parsing_type = None
@@ -316,6 +320,8 @@ def parse_folder(in_folder : str,
     valid_data_counter = 0
     valid_char_counter = 0
     
+    data_counter = lambda parsed_obj: 1 if parsed_obj["inner_objects"] == [] else len(parsed_obj["inner_objects"])
+    
     for file in pbar:
         pbar.set_postfix_str("/".join(file.split("/")[len(in_folder.split("/")):]))
         is_train_data = random.random() < train_ratio
@@ -325,18 +331,18 @@ def parse_folder(in_folder : str,
             parsed_objects = parser.process_file(file)
             if is_train_data:
                 train_files_counter += 1
-                train_data_counter += len(parsed_objects)
+                train_data_counter += sum([data_counter(parsed_obj) for parsed_obj in parsed_objects])
                 train_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
                 out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
             else:
                 valid_files_counter += 1
-                valid_data_counter += len(parsed_objects)
+                valid_data_counter += sum([data_counter(parsed_obj) for parsed_obj in parsed_objects])
                 valid_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
                 out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
 
             
             with open(out_file, "w") as fd:
-                json.dump(parsed_objects, fd)
+                json.dump(parsed_objects, fd, indent=2)
         except Exception as e:
             # print("Skipped file\n")
             skipped_files.append({"file" : file, "exception" : str(e)})    
@@ -371,9 +377,7 @@ if __name__ == "__main__":
     
     parse_folder(in_folder, train_folder, valid_folder, train_ratio)
     
-    if len(skipped_files) > 0:
-        with open("skipped_files.log", "w") as fd:
-            for skipped_file in skipped_files:
-                fd.write("{}\n{}".format(skipped_file["file"], skipped_file["exception"]))
+    with open("skipped_files.log", "w") as fd:
+        json.dump(skipped_files, fd, indent=2)
     
     

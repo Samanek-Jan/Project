@@ -10,7 +10,7 @@ class FunctionParser:
     def __init__(self):
         self.logger = logging.getLogger('FunctionParser')
 
-    def process(self, lines : List[str], is_gpu : bool):
+    def process(self, lines : List[str], is_gpu : bool, *args, **kwargs):
         self.logger.debug('Processing function')
         self.parsed_function = deepcopy(PARSED_FUNCTION_TEMPLATE)
         

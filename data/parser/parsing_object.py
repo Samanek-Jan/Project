@@ -1,11 +1,13 @@
 
 PARSING_TYPES = ["object", "struct", "class", "function"]
+MIN_INNER_LEN_PARSING = 100
 
 PARSED_OBJECT_TEMPLATE = {
-    "comment" : "",
-    "body"    : "",
-    "type"    : "",
-    "is_gpu"  : False
+    "comment"       : "",
+    "body"          : "",
+    "type"          : "",
+    "inner_objects" : [],
+    "is_gpu"        : False
 }
 
 PARSED_CLASS_TEMPLATE = {

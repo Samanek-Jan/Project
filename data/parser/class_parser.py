@@ -3,7 +3,8 @@ import logging
 from typing import List
 
 from data.parser.parser_exceptions import ParsingClassException
-from data.parser.parsing_object import PARSED_CLASS_TEMPLATE
+from data.parser.parsing_object import MIN_INNER_LEN_PARSING, PARSED_CLASS_TEMPLATE
+import data.parser.parser as parser
 
 
 class ClassParser:
@@ -11,7 +12,7 @@ class ClassParser:
     logger = logging.getLogger('ClassParser')
     
 
-    def process(self, lines : List[str], is_gpu : bool):
+    def process(self, lines : List[str], is_gpu : bool, filename : str):
         self.logger.debug('Processing struct')
         self.parsed_class = deepcopy(PARSED_CLASS_TEMPLATE)
         content = "\n".join(lines)
@@ -24,6 +25,14 @@ class ClassParser:
         self.parsed_class["body"] = body
         self.parsed_class["type"] = "class"
         self.parsed_class["is_gpu"] = is_gpu
+        if len(body) > MIN_INNER_LEN_PARSING:
+            start_bracket = body.find("{")
+            end_bracket = body.rfind("}")
+            if start_bracket > -1 and end_bracket > start_bracket:
+                inner_parser = parser.Parser()
+                body = body[start_bracket+1 : end_bracket]
+                self.parsed_class["inner_objects"] = inner_parser.process_str(body, filename)
+        
         return self.parsed_class
 
 

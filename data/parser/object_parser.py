@@ -2,14 +2,15 @@ from copy import deepcopy
 import logging
 from typing import List
 from data.parser.parser_exceptions import ParsingStructException
-from data.parser.parsing_object import PARSED_OBJECT_TEMPLATE
+from data.parser.parsing_object import MIN_INNER_LEN_PARSING, PARSED_OBJECT_TEMPLATE
+import data.parser.parser as parser
 
 
 class ObjectParser:
 
     logger = logging.getLogger('ObjectParser')
 
-    def process(self, lines : List[str], is_gpu : bool):
+    def process(self, lines : List[str], is_gpu : bool, filename : str):
         self.parsed_object = deepcopy(PARSED_OBJECT_TEMPLATE) 
         self.logger.debug('Processing struct')
         content = "\n".join(lines)
@@ -19,6 +20,15 @@ class ObjectParser:
         self.parsed_object["body"] = body
         self.parsed_object["type"] = "object"
         self.parsed_object["is_gpu"] = is_gpu
+        
+        if len(body) > MIN_INNER_LEN_PARSING:
+            start_bracket = body.find("{")
+            end_bracket = body.rfind("}")
+            if start_bracket > -1 and end_bracket > start_bracket:
+                inner_parser = parser.Parser()
+                body = body[start_bracket+1 : end_bracket]
+                self.parsed_object["inner_objects"] = inner_parser.process_str(body, filename)
+        
         return self.parsed_object
 
 
