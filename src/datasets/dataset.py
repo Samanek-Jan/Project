@@ -79,9 +79,9 @@ class Dataset(torch.utils.data.Dataset):
             self.sample_buffer = self.data_sampler.sample(parsed_objs, self.samples_per_obj)
         
         sample = self.sample_buffer.pop(0)
-        x = torch.tensor(sample["x"])
+        x = torch.tensor(sample["x"], dtype=torch.int32).to(DEVICE)
         x_str = sample["x_str"] 
-        y = torch.tensor(sample["y"])
+        y = torch.tensor(sample["y"], dtype=torch.long).to(DEVICE)
         y_str = sample["y_str"]
         
         return x, x_str, y, y_str

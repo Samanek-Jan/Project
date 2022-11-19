@@ -12,6 +12,7 @@ class Transformer(nn.Module):
         self.decoder = Decoder(num_decoder_layers, hidden_size, num_heads, dropout)
 
     def forward(self, source, source_padding_mask, target, target_padding_mask):
+        l = 1
         memory = self.encoder(source, source_padding_mask)
         output = self.decoder(target, target_padding_mask, memory, source_padding_mask)
         return output
@@ -185,7 +186,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, hidden_size, max_len=512):
+    def __init__(self, hidden_size, max_len=256):
         super(PositionalEncoding, self).__init__()
 
         pe = torch.zeros(max_len, hidden_size)  # shape: [T, D]

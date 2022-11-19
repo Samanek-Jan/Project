@@ -2,9 +2,10 @@ import os
 from typing import Dict, List
 import random
 from tokenizers import Tokenizer
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, RANDOM_SEED
+import tokenizers
+from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, NEW_LINE_TOKEN, RANDOM_SEED
 
-from datasets.dataset_errors import TokenizerError, WrongParameterError
+from datasets.dataset_errors import WrongParameterError
 from datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
@@ -48,12 +49,15 @@ class DataSampler:
     def __get_random_object(self, parsed_objects : List[Dict[str, str]]) -> Dict[str, str]:
         return random.choice(parsed_objects)
     
-    def __align_x(self, tokens : List[str], x_size : int, pivot : int = None):
+    def __align_x(self, x : tokenizers.Encoding, x_size : int, pivot : int = None):
+        # X_SIZE_COPY = x_size
+        tokens = x.tokens
+        ids = x.ids
         content_size = len(tokens)
         
         if pivot is None:
             end_token = tokens[content_size-x_size]
-            while x_size < content_size and end_token.startswith(SUBWORD_PREFIX):
+            while x_size < min(content_size, self.max_x) and not end_token.startswith(NEW_LINE_TOKEN):
                 x_size += 1
                 end_token = tokens[content_size-x_size]
             
@@ -61,50 +65,59 @@ class DataSampler:
 
         else:
             end_token = tokens[pivot - x_size]
-            while x_size < content_size - pivot and x_size < pivot and end_token.startswith(SUBWORD_PREFIX):
+            while x_size < content_size - pivot and x_size < self.max_x and not end_token.startswith(NEW_LINE_TOKEN):
                 x_size += 1
                 end_token = tokens[content_size - x_size]
                 
             tokens = tokens[pivot - x_size : pivot]
-            
-        x_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
-        x_str = self.tokenizer.decode(x_ids)
-        return x_ids, x_str
+        
+        ids = ids[len(ids)-x_size:]
+        x_str = self.tokenizer.decode(ids, skip_special_tokens=True)
+        return ids, x_str
 
-    def __align_y(self, tokens : List[str], y_size : int, is_cuda_snippet : bool, pivot : int = 0):
+    def __align_y(self, y : tokenizers.Encoding, y_size : int, is_cuda_snippet : bool, pivot : int = 0):
+        tokens = y.tokens
+        ids = y.ids
         content_size = len(tokens)
         
         end_token = tokens[pivot + y_size - 1]
-        while y_size < content_size - pivot and y_size < self.max_y and end_token.startswith(SUBWORD_PREFIX):
+        while y_size < content_size - pivot and y_size < self.max_y-2 and not end_token.startswith(NEW_LINE_TOKEN):
             y_size += 1
             end_token = tokens[pivot + y_size - 1]
             
-        tokens = tokens[pivot : pivot + y_size]
-        y_ids = self.tokenizer.encode(tokens, is_pretokenized=True).ids
-        y_ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
-        y_ids.append(self.tokenizer.token_to_id(EOS_TOKEN))
-        y_str = self.tokenizer.decode(y_ids, skip_special_tokens=True)
-        
-        return y_ids, y_str
+        tokens = tokens[pivot:pivot + y_size]
+        tokens.insert(0, CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN)
+        tokens.append(EOS_TOKEN)
+        ids = ids[pivot:pivot + y_size]
+        ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
+        ids.append(self.tokenizer.token_to_id(EOS_TOKEN))
+        y_str = self.tokenizer.decode(ids, skip_special_tokens=True)
+        return ids, y_str
         
     
     def __get_basic_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
         
-        x = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "")).tokens
-        y = self.tokenizer.encode(obj.get("body", "")).tokens
+        x = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", ""))
+        y = self.tokenizer.encode(obj.get("body", ""))
         
-        if len(x) + len(y) < self.min_x + self.min_y:
+        assert len(x.ids) == len(x.tokens)
+        assert len(y.ids) == len(y.tokens)  
+        
+        if len(x.ids) + len(y.ids) < self.min_x + self.min_y:
             return None
         
-        elif len(x) < self.min_x or len(y) < self.min_y:
-            return self.__get_random_sample(obj)          
-            
+        elif len(x.ids) < self.min_x or len(y.ids) < self.min_y:
+            return self.__get_random_sample(obj)           
+
         else:
-            x_size = min(self.max_x, len(x))
-            y_size = min(self.max_y, len(y))
+            x_size = min(self.max_x, len(x.ids))
+            y_size = min(self.max_y-2, len(y.ids))
                     
             x, x_str = self.__align_x(x, x_size)
             y, y_str = self.__align_y(y, y_size, obj.get("is_gpu", False))
+            
+        if x is None or y is None:
+            return None
         
         return {
                 "x" : x, 
@@ -114,16 +127,22 @@ class DataSampler:
                }
     
     def __get_random_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
-        tokens = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "") + obj.get("body", "")).tokens
-        if len(tokens) < self.min_x + self.min_y:
+        encoding = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
+        ids_len = len(encoding.ids)
+        if ids_len < self.min_x + self.min_y:
             return None
-
-        x_size = random.randint(self.min_x, min(self.max_x, len(tokens) - self.min_y))
-        y_size = random.randint(self.min_y, min(self.max_y, len(tokens) - x_size))
-        pivot = random.randint(x_size, len(tokens) - y_size)
         
-        x, x_str = self.__align_x(tokens, x_size, pivot)
-        y, y_str = self.__align_y(tokens, y_size, obj.get("is_gpu", False), pivot)
+        assert len(encoding.ids) == len(encoding.tokens)
+
+        x_size = random.randint(self.min_x, min(self.max_x, ids_len - self.min_y))
+        y_size = random.randint(self.min_y, min(self.max_y-2, ids_len - x_size))
+        pivot = random.randint(x_size, ids_len - y_size)
+        
+        x, x_str = self.__align_x(encoding, x_size, pivot)
+        y, y_str = self.__align_y(encoding, y_size, obj.get("is_gpu", False), pivot)
+        
+        if x is None or y is None:
+            return None
         
         return {
                 "x" : x, 
@@ -132,13 +151,14 @@ class DataSampler:
                 "y_str" : y_str,
                 "is_gpu" : obj.get("is_gpu", False)
                }
-                
+            
     def sample(self, 
                parsed_objects : List[Dict[str, str]], 
                samples_per_obj : int = 1, 
-               max_tries : int = None)              -> List[Dict]:
+               max_tries : int = None) -> List[Dict]:
 
         samples = []
+        parsed_objects = flatten_object_list(parsed_objects)
         
         if samples_per_obj < 1:
             return samples
@@ -150,8 +170,8 @@ class DataSampler:
             
             parsed_objects = self.__shuffle_objects(parsed_objects)
             
-            for i in range(len(parsed_objects)):
-                sample = self.__get_basic_sample(parsed_objects[i])
+            for parsed_obj in parsed_objects:
+                sample = self.__get_basic_sample(parsed_obj)
                 if sample is not None:
                     samples.append(sample)          
                     sample_n -= 1
@@ -188,3 +208,12 @@ class DataSampler:
     
     def get_tokenizer(self):
         return self.tokenizer
+    
+def flatten_object_list(parsed_objects : List):
+    flatten_list = []
+    
+    for parsed_object in parsed_objects:
+        flatten_list += flatten_object_list(parsed_object["inner_objects"])
+        flatten_list.append(parsed_object)
+    
+    return flatten_list

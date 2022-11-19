@@ -11,7 +11,7 @@ import transformers
 
 from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, PAD_TOKEN
 from datasets.dataset import CollateFunctor, Dataset
-from model.baseline.config import BATCH_SIZE, DEVICE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
+from model.baseline.config import BATCH_SIZE, DEVICE, LR, MAX_X, MAX_Y, MIN_X, MIN_Y, MODELS_OUT_FOLDER, WARMUP_DURATION
 from model.baseline.linear_lr import LinearLR
 from model.baseline.models import Model
 from model.baseline.search import GreedySearch
@@ -31,14 +31,14 @@ def main():
     argument_parser.add_argument("--num_heads", "-s", type=int, default=5)
     argument_parser.add_argument("--dropout", "-d", type=float, default=0.1)
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=3)
-    argument_parser.add_argument("--epoch_size", "-i", type=int, default=10000)
+    argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
     args = argument_parser.parse_args()
     
     data_sampler_kwargs = {
-        "min_x" : 70,
-        "max_x" : 150,
-        "min_y" : 30,
-        "max_y" : 150,
+        "min_x" : MIN_X,
+        "max_x" : MAX_X,
+        "min_y" : MIN_Y,
+        "max_y" : MAX_Y,
         "tokenizer_path" : args.tokenizer
     }
     
