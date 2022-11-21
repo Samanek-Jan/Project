@@ -1,0 +1,10 @@
+[
+  {
+    "input": "/**\n * brief: Matrix multiplication function\n * param1 Matrix A\n * param2 Matrix B\n * returns Matrix\n**/",
+    "is_cuda": false
+  },
+  {
+    "input": "/**\n * brief: Matrix multiplication function\n * param1 Matrix A\n * param2 Matrix B\n * returns Matrix\n**/",
+    "is_cuda": true
+  }
+]

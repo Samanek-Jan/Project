@@ -84,7 +84,7 @@ class BeamSearch:
 
             target = target.cpu()
             next_subword = (prediction.indices % self.vocab_size).tolist()  # shape: [batch, beam]
-            previous_batch = (prediction.indices // self.vocab_size).tolist()  # shape: [batch, beam]
+            previous_batch = (torch.div(prediction.indices, self.vocab_size, rounding_mode='floor')).tolist()  # shape: [batch, beam]
             logp = prediction.values.tolist()  # shape: [batch, beam]
             next_target, next_logps = [], []
 

@@ -98,7 +98,7 @@ class Dataset(torch.utils.data.Dataset):
     
     def get_tokenizer(self):
         return self.data_sampler.get_tokenizer()
-        
+ 
 
 class CollateFunctor:
     def __init__(self, pad_id: int):
@@ -121,7 +121,7 @@ class CollateFunctor:
         attention_mask = subword_ids == self.pad_id
 
         return subword_ids.to(DEVICE), attention_mask.to(DEVICE)
-    
+
 
 
 if __name__ == "__main__":
