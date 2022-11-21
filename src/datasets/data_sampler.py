@@ -3,10 +3,10 @@ from typing import Dict, List
 import random
 from tokenizers import Tokenizer
 import tokenizers
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, NEW_LINE_TOKEN, RANDOM_SEED
 
-from datasets.dataset_errors import WrongParameterError
-from datasets.tokenizer import SUBWORD_PREFIX
+from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, NEW_LINE_TOKEN, RANDOM_SEED
+from src.datasets.dataset_errors import WrongParameterError
+from src.datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
 random.seed(RANDOM_SEED)

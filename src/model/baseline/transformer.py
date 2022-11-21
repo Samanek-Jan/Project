@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from datasets.config import DEVICE
+from src.datasets.config import DEVICE
 
 class Transformer(nn.Module):
     def __init__(self, num_encoder_layers, num_decoder_layers, hidden_size, num_heads, dropout):

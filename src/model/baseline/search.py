@@ -2,7 +2,8 @@ from tokenizers import Tokenizer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
+
+from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 
 from model.baseline.config import DEVICE, MAX_Y
 from model.baseline.models import Model

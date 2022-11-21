@@ -3,8 +3,7 @@ import torch
 import torch.nn as nn
 import math
 
-from datasets.config import DEVICE, PAD_TOKEN
-
+from src.datasets.config import DEVICE, PAD_TOKEN
 from model.baseline.transformer import Transformer
 
 class Model(nn.Module):

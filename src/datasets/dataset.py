@@ -5,10 +5,10 @@ import torch
 import torch.nn.functional as F
 import random
 from tqdm import tqdm
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, DEVICE
+from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, DEVICE
 
-from datasets.data_sampler import DataSampler
-from datasets.dataset_errors import EmptyDatasetError, WrongParameterError
+from src.datasets.data_sampler import DataSampler
+from src.datasets.dataset_errors import EmptyDatasetError, WrongParameterError
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -56,7 +56,7 @@ class Dataset(torch.utils.data.Dataset):
             if i >= len(files):
                 self.file_idx = 0
                 next_file_batch_size = next_file_batch_size - self.file_idx
-                self.data += self.__load_data(next_file_batch_size)
+                self.__load_data(next_file_batch_size)
                 break
             
             file = files[i]

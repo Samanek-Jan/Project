@@ -9,9 +9,9 @@ from tokenizers.processors import TemplateProcessing
 import tokenizers.decoders as decoders
 from tokenizers.decoders import WordPiece
 from tokenizers import pre_tokenizers, Regex, normalizers
-from datasets.config import SPECIAL_TOKENS
 
-from datasets.dataset_errors import WrongParameterError
+from src.datasets.config import SPECIAL_TOKENS
+from src.datasets.dataset_errors import WrongParameterError
 
 LOWERCASE = False
 SUBWORD_PREFIX = '$'

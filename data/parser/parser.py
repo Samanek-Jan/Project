@@ -367,9 +367,9 @@ def clear_folders(train_folder, valid_folder):
     
 
 if __name__ == "__main__":
-    in_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/raw"
-    train_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/train"
-    valid_folder = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/valid"
+    in_folder = "../raw"
+    train_folder = "../processed/train"
+    valid_folder = "../processed/valid"
     train_ratio = 0.8
     
     print("Cleaning folders...", end="\r")

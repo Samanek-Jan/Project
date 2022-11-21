@@ -1,6 +1,5 @@
 from copy import deepcopy
-import logging
-import os
+import os, sys
 from tokenizers import Tokenizer
 import torch
 import torch.nn as nn
@@ -9,8 +8,8 @@ from tqdm import tqdm
 import argparse
 import transformers
 
-from datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, PAD_TOKEN
-from datasets.dataset import CollateFunctor, Dataset
+from src.datasets.config import CUDA_BOS_TOKEN, PAD_TOKEN
+from src.datasets.dataset import CollateFunctor, Dataset
 from model.baseline.config import BATCH_SIZE, DEVICE, LR, MAX_X, MAX_Y, MIN_X, MIN_Y, MODELS_OUT_FOLDER, WARMUP_DURATION
 from model.baseline.linear_lr import LinearLR
 from model.baseline.models import Model
@@ -18,8 +17,7 @@ from model.baseline.search import GreedySearch
 
 
 def main():
-    logger = logging.getLogger(__name__)
-    logger.info(f"Using {DEVICE}")
+    print(f"Using {DEVICE}")
     
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--tokenizer", "-t", required=True, type=str)
@@ -70,7 +68,7 @@ def main():
     model_name = f"baseline_model.pt"
     full_path = os.path.join(MODELS_OUT_FOLDER, model_name)
     torch.save(best_model, full_path) 
-    logger.info("Done")
+    print("Done")
 
 
 def train_and_test(model, 
@@ -78,8 +76,6 @@ def train_and_test(model,
                    test_dataloader, 
                    eval_every_n     = 1, 
                    epoch_n          = 1):
-    
-    logger = logging.getLogger(__name__)
     
     best_version = {"BLEU" : float("-inf")}
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
@@ -118,7 +114,7 @@ def train_and_test(model,
         if epoch % eval_every_n == 0:
             bleu, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader)
             bv_bleu = best_version["BLEU"]
-            logger.info(f"{epoch}. best ver. BLEU. = {bv_bleu:.3f}, currect ver. BLEU. = {bleu:.3f}")
+            print(f"{epoch}. best ver. BLEU. = {bv_bleu:.3f}, currect ver. BLEU. = {bleu:.3f}")
             if bv_bleu < bleu:
                 best_version = {
                     "model_dict" : deepcopy(model.state_dict()),
