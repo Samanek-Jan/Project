@@ -62,34 +62,33 @@ class DataSampler:
         
         if len(line) < seq_check_len:
             return line
+        
+        line = line.strip(" -")
 
         if line[-seq_check_len:] == line[-1] * seq_check_len:
-            line = line.rstrip(line[-1])
+            line = line.strip(line[-1])
         
         return line       
                     
     def __clear_comment(self, comment : str) -> str:
-        if comment.startswith("//"):
-            clear_comment = "//"
-            redundant_slash = True
-            for c in comment[2:]:
-                if c == "/" and redundant_slash:
-                    continue
-                clear_comment += c
-            clear_comment = self.__clear_line(clear_comment)
+        clear_comment = []
+        comment = comment.replace("//", "")
+        comment = comment.replace(" * ", "")
+        comment_lines = comment.split("\n")
+        for line in comment_lines:
+            if line.lstrip().startswith("/") or line.rstrip().endswith("/"):
+                line = line.strip("/")
             
-        else:
-            clear_comment = []
-            comment = comment.split("\n")
-            for line in comment:
-                clear_line = line.strip().strip("\t")
-                clear_line = line.lstrip(" * ").lstrip("/*").rstrip("*/").strip().strip("\t")
-                if len(clear_line) > 1:
-                    clear_line = self.__clear_line(clear_line)
-                    clear_comment.append("//" + clear_line)
+            if line.lstrip().startswith("*") or line.rstrip().endswith("*"):
+                line = line.strip("*")
             
-            clear_comment = "\n".join(clear_comment)
-            
+            if line.lstrip().startswith("\\") or line.rstrip().endswith("\\"):
+                line = line.strip("\\")
+                
+            if line != "":
+                clear_comment.append(self.__clear_line(line))
+
+        clear_comment = " ".join(clear_comment)
         return clear_comment
     
     def __get_basic_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
