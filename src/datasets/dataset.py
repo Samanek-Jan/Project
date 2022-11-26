@@ -128,7 +128,7 @@ if __name__ == "__main__":
     from tokenizers import Tokenizer
     in_folder_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/train"
     tokenizer_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_20000.json"
-    data_sampler_kwargs = {"min_x" : 10, "max_x" : 50, "min_y" : 5, "max_y" : 20, "tokenizer_path" : tokenizer_path}
+    data_sampler_kwargs = {"min_x" : 10, "max_x" : 160, "min_y" : 5, "max_y" : 160, "tokenizer_path" : tokenizer_path}
     dataset = Dataset(in_folder_path, 10, True, 5,**data_sampler_kwargs)
     tokenizer : Tokenizer = Tokenizer.from_file(tokenizer_path)
     
@@ -153,15 +153,18 @@ if __name__ == "__main__":
     
     while True:
         x , x_str, y, y_str = dataset.__getitem__(0)
-        print([tokenizer.id_to_token(id) for id in x])
-        print()
-        print(tokenizer.decode(x.tolist()))
-        print()
-        print([tokenizer.id_to_token(id) for id in y])
-        print()
-        print(tokenizer.decode(y.tolist()))
-        print()
-        print("\n------------------------------------------\n")
+        print("x_str:\n\t{}\n".format(x_str))
+        print("y_str:\n\t{}\n-----------------------------------------\n\n".format(y_str))
+        
+        # print([tokenizer.id_to_token(id) for id in x])
+        # print()
+        # print(tokenizer.decode(x.tolist()))
+        # print()
+        # print([tokenizer.id_to_token(id) for id in y])
+        # print()
+        # print(tokenizer.decode(y.tolist()))
+        # print()
+        # print("\n------------------------------------------\n")
 
         inp = input()
         if inp.lower() == "exit":

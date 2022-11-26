@@ -1,6 +1,7 @@
 import os
 from typing import Dict, List
 import random
+import numpy as np
 from tokenizers import Tokenizer
 import tokenizers
 
@@ -10,6 +11,15 @@ from src.datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
 random.seed(RANDOM_SEED)
+
+def flatten_object_list(parsed_objects : List):
+    flatten_list = []
+    
+    for parsed_object in parsed_objects:
+        flatten_list += flatten_object_list(parsed_object["inner_objects"])
+        flatten_list.append(parsed_object)
+    
+    return flatten_list
 
 class DataSampler:
     
@@ -45,60 +55,47 @@ class DataSampler:
     def __shuffle_objects(self, parsed_objects : List[Dict[str, str]]) -> Dict[str, str]:
         random.shuffle(parsed_objects)
         return parsed_objects
-    
-    def __get_random_object(self, parsed_objects : List[Dict[str, str]]) -> Dict[str, str]:
-        return random.choice(parsed_objects)
-    
-    def __align_x(self, x : tokenizers.Encoding, x_size : int, pivot : int = None):
-        # X_SIZE_COPY = x_size
-        tokens = x.tokens
-        ids = x.ids
-        content_size = len(tokens)
-        
-        if pivot is None:
-            end_token = tokens[content_size-x_size]
-            while x_size < min(content_size, self.max_x) and not end_token.startswith(NEW_LINE_TOKEN):
-                x_size += 1
-                end_token = tokens[content_size-x_size]
-            
-            tokens = tokens[content_size-x_size:]    
 
+    def __clear_line(self, line : str, seq_check_len : int = 3) -> str:
+        if line.endswith("\n"):
+            line = line[:-1]
+        
+        if len(line) < seq_check_len:
+            return line
+
+        if line[-seq_check_len:] == line[-1] * seq_check_len:
+            line = line.rstrip(line[-1])
+        
+        return line       
+                    
+    def __clear_comment(self, comment : str) -> str:
+        if comment.startswith("//"):
+            clear_comment = "//"
+            redundant_slash = True
+            for c in comment[2:]:
+                if c == "/" and redundant_slash:
+                    continue
+                clear_comment += c
+            clear_comment = self.__clear_line(clear_comment)
+            
         else:
-            end_token = tokens[pivot - x_size]
-            while x_size < content_size - pivot and x_size < self.max_x and not end_token.startswith(NEW_LINE_TOKEN):
-                x_size += 1
-                end_token = tokens[content_size - x_size]
-                
-            tokens = tokens[pivot - x_size : pivot]
-        
-        ids = ids[len(ids)-x_size:]
-        x_str = self.tokenizer.decode(ids, skip_special_tokens=True)
-        return ids, x_str
-
-    def __align_y(self, y : tokenizers.Encoding, y_size : int, is_cuda_snippet : bool, pivot : int = 0):
-        tokens = y.tokens
-        ids = y.ids
-        content_size = len(tokens)
-        
-        end_token = tokens[pivot + y_size - 1]
-        while y_size < content_size - pivot and y_size < self.max_y-2 and not end_token.startswith(NEW_LINE_TOKEN):
-            y_size += 1
-            end_token = tokens[pivot + y_size - 1]
+            clear_comment = []
+            comment = comment.split("\n")
+            for line in comment:
+                clear_line = line.strip().strip("\t")
+                clear_line = line.lstrip(" * ").lstrip("/*").rstrip("*/").strip().strip("\t")
+                if len(clear_line) > 1:
+                    clear_line = self.__clear_line(clear_line)
+                    clear_comment.append("//" + clear_line)
             
-        tokens = tokens[pivot:pivot + y_size]
-        tokens.insert(0, CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN)
-        tokens.append(EOS_TOKEN)
-        ids = ids[pivot:pivot + y_size]
-        ids.insert(0, self.tokenizer.token_to_id(CUDA_BOS_TOKEN if is_cuda_snippet else CPP_BOS_TOKEN))
-        ids.append(self.tokenizer.token_to_id(EOS_TOKEN))
-        y_str = self.tokenizer.decode(ids, skip_special_tokens=True)
-        return ids, y_str
-        
+            clear_comment = "\n".join(clear_comment)
+            
+        return clear_comment
     
     def __get_basic_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
         
-        x = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", ""))
-        y = self.tokenizer.encode(obj.get("body", ""))
+        x = self.tokenizer.encode(self.__clear_comment(obj.get("comment", "")))
+        y = self.tokenizer.encode(obj.get("header", "") + obj.get("body", ""))
         
         assert len(x.ids) == len(x.tokens)
         assert len(y.ids) == len(y.tokens)  
@@ -107,22 +104,47 @@ class DataSampler:
             return None
         
         elif len(x.ids) < self.min_x or len(y.ids) < self.min_y:
-            return self.__get_random_sample(obj)           
+            # return self.__get_random_sample(obj)   
+            return None
+        
+        # 50 % chance of using code section in X input if snippet is bigger than max size
+        elif len(x.ids) + len(y.ids) > self.max_x + self.max_y and np.random.random() < 0.5:
+            if len(x.ids) > self.max_x:
+                x_size = self.max_x
+                y_size = min(self.max_y - (len(x.ids) - x_size) - 2, len(y.ids))
+                if y_size < self.min_y:
+                    return None
+                
+                x_ids = x.ids[:x_size]
+                x_str = self.tokenizer.decode(x_ids, skip_special_tokens=True)
+                y_ids = x.ids[x_size:] + y.ids[:y_size]
+                y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
+                
+            else: # len(y.ids) > self.max_y
+                x_size = len(x.ids)
+                y_size = min(len(y.ids) - (self.max_x - x_size), self.max_y-2)
+                
+                x_ids = x.ids + y.ids[:self.max_x-x_size]
+                y_ids = y.ids[self.max_x-x_size:self.max_x-x_size+y_size]
 
         else:
             x_size = min(self.max_x, len(x.ids))
             y_size = min(self.max_y-2, len(y.ids))
-                    
-            x, x_str = self.__align_x(x, x_size)
-            y, y_str = self.__align_y(y, y_size, obj.get("is_gpu", False))
             
-        if x is None or y is None:
-            return None
+            x_ids = x.ids[len(x.ids) - x_size:]
+            y_ids = y.ids[:y_size]
+        
+        x_str = self.tokenizer.decode(x_ids, skip_special_tokens=False)
+        y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
+        BOS_ID = self.tokenizer.token_to_id(CUDA_BOS_TOKEN if obj.get("is_gpu", False) else CPP_BOS_TOKEN)
+        EOS_ID = self.tokenizer.token_to_id(EOS_TOKEN)
+        y_ids.insert(0, BOS_ID)
+        y_ids.append(EOS_ID)
         
         return {
-                "x" : x, 
+                "x" : x_ids, 
                 "x_str" : x_str,
-                "y" : y, 
+                "y" : y_ids, 
                 "y_str" : y_str
                }
     
@@ -160,42 +182,49 @@ class DataSampler:
         samples = []
         parsed_objects = flatten_object_list(parsed_objects)
         
-        if samples_per_obj < 1:
-            return samples
-        
-        sample_n = samples_per_obj * len(parsed_objects)
-        tries_left = sample_n * 10 if max_tries is None else max_tries
-        
-        if self.basic_first_samples:
-            
-            parsed_objects = self.__shuffle_objects(parsed_objects)
-            
-            for parsed_obj in parsed_objects:
-                sample = self.__get_basic_sample(parsed_obj)
-                if sample is not None:
-                    samples.append(sample)          
-                    sample_n -= 1
-                
-                tries_left -= 1
-                if tries_left < 1:
-                    return samples
-        
-        
-        parsed_objects = self.__shuffle_objects(parsed_objects)
-            
-        while sample_n > 0:        
-            parsed_obj = self.__get_random_object(parsed_objects)
-            sample = self.__get_random_sample(parsed_obj)
+        for obj in parsed_objects:
+            sample = self.__get_basic_sample(obj)
             if sample is not None:
                 samples.append(sample)
-                sample_n -= 1
+                
+        return samples
+        
+        # if samples_per_obj < 1:
+        #     return samples
+        
+        # sample_n = samples_per_obj * len(parsed_objects)
+        # tries_left = sample_n * 10 if max_tries is None else max_tries
+        
+        # if self.basic_first_samples:
             
-            tries_left -= 1
-            if tries_left < 1:
-                break
+        #     parsed_objects = self.__shuffle_objects(parsed_objects)
+            
+        #     for parsed_obj in parsed_objects:
+        #         sample = self.__get_basic_sample(parsed_obj)
+        #         if sample is not None:
+        #             samples.append(sample)          
+        #             sample_n -= 1
+                
+        #         tries_left -= 1
+        #         if tries_left < 1:
+        #             return samples
+        
+        
+        # parsed_objects = self.__shuffle_objects(parsed_objects)
+            
+        # while sample_n > 0:        
+        #     parsed_obj = self.__get_random_object(parsed_objects)
+        #     sample = self.__get_random_sample(parsed_obj)
+        #     if sample is not None:
+        #         samples.append(sample)
+        #         sample_n -= 1
+            
+        #     tries_left -= 1
+        #     if tries_left < 1:
+        #         break
 
         
-        return samples
+        # return samples
     
     def get_token_id(self, token : str) -> int:
         return self.tokenizer.token_to_id(token)
@@ -208,12 +237,3 @@ class DataSampler:
     
     def get_tokenizer(self):
         return self.tokenizer
-    
-def flatten_object_list(parsed_objects : List):
-    flatten_list = []
-    
-    for parsed_object in parsed_objects:
-        flatten_list += flatten_object_list(parsed_object["inner_objects"])
-        flatten_list.append(parsed_object)
-    
-    return flatten_list

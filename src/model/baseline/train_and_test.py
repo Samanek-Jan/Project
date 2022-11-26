@@ -129,10 +129,12 @@ def train_and_test(model,
         print(f"Example of translations")
         rand_inds = torch.randint(0, len(target_sentences), (2,))
         for i in rand_inds:
-            print(source_sentences[i])
-            print(target_sentences[i])
-            print(pred_sentences[i])
-            print()
+            print("source:\n\t{}\n\ntarget:\n\t{}\nprediction:\n\t{}\n".format(source_sentences[i], target_sentences[i][0], pred_sentences[i]))
+            # print(source_sentences[i])
+            # print(target_sentences[i][0])
+            # print(pred_sentences[i])
+            # print()
+        print("--------------------------------\n")
         
         if bleu > max_bleu:
             max_bleu = bleu
@@ -150,6 +152,7 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
     sentences_pred = []
     tokenizer : Tokenizer = test_dataloader.dataset.get_tokenizer()
     searcher = search_class(model, tokenizer)
+    bleu_score_metric = torchmetrics.BLEUScore()
 
     if pbar:
         test_dataloader = tqdm(test_dataloader, leave=False)
@@ -166,8 +169,10 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
         sources_list.extend(sources_str)
         sentences_target.extend([[sentence] for sentence in targets_str])
         sentences_pred.extend(predictions_str)
+        
+        test_dataloader.set_description("BLEU score: {:.3f}".format(bleu_score_metric(sentences_pred, sentences_target)))
 
-    bleu_score = torchmetrics.BLEUScore()(sentences_pred, sentences_target)
+    bleu_score = bleu_score_metric(sentences_pred, sentences_target)
 
     # print(f"BLEU score: {bleu_score.compute() * 100.0}")
     # score_val = bleu_score.compute()
