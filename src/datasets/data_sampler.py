@@ -60,10 +60,10 @@ class DataSampler:
         if line.endswith("\n"):
             line = line[:-1]
         
+        line = line.strip(" -")
+        
         if len(line) < seq_check_len:
             return line
-        
-        line = line.strip(" -")
 
         if line[-seq_check_len:] == line[-1] * seq_check_len:
             line = line.strip(line[-1])
