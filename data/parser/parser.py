@@ -6,7 +6,7 @@ from typing import Dict, Generator, Iterable, List
 import data.parser.class_parser as class_parser
 import data.parser.function_parser as function_parser
 import data.parser.object_parser as object_parser
-from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, InvalidTypeException, ParsingFunctionException
+from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
 from data.parser.struct_parser import StructParser
 from copy import deepcopy
 from tqdm import tqdm
@@ -240,11 +240,16 @@ class Parser:
         
     def __object_ready_state(self, *args):
         if self.current_parsing_type == None:
-            message = f"No type of parsed object on line {self.line_counter}"
-            # self.logger.error(message)
-            raise ParsingError(message)
+            raise ParsingError(f"No type of parsed object on line {self.line_counter}")
         
-        self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, self.is_current_file_gpu, self.filename))
+        tokens = set(".\n".join(self.current_code_block).split(" "))
+        gpu_keywords = ["__device__", "__global__", "__host__", "__constant__"]
+        is_gpu = self.is_current_file_gpu or any([keyword in tokens for keyword in gpu_keywords])
+        try:
+            self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, is_gpu, self.filename))
+        except Exception as e:
+            raise ProcessingObjectException(f"Processing object on line {self.line_counter} failed with error: {str(e)}")
+        
         self.current_status = READY_AUTOMATA_STATE
         self.current_code_block.clear()
         self.current_parsing_type = None
@@ -253,23 +258,34 @@ class Parser:
                 
         
     def count_brackets(self, line : str):
-        if line.lstrip().startswith("/*"):
-            if not line.rstrip().endswith("*/"):
-                self.is_parsing_comment = True
-            return 0
-        elif self.is_parsing_comment or line.lstrip().startswith("//"):
-            if line.rstrip().endswith("*/"):
-                self.is_parsing_comment = False
-            return 0
-        
+        is_in_comment_block = self.is_parsing_comment
+        bracket_sum = 0
         d = {"{" : 1, "}" : -1}
-        return sum([d[c] for c in line if c in d])
+        
+        for i, c in enumerate(line[:-1]):
+            if c == "/" and not is_in_comment_block:
+                if line[i+1] == "/":
+                    return bracket_sum
+                elif line[i+1] == "*":
+                    is_in_comment_block = True
+                continue
+                    
+            elif is_in_comment_block:
+                if c == "*" and line[i+1] == "/":
+                    is_in_comment_block = False
+                continue
+            
+            else:
+                bracket_sum += d.get(c, 0)
+
+        self.is_parsing_comment = is_in_comment_block
+        return bracket_sum
 
 # ----------------------------------------------------------------
 # ------------------------ END OF PARSER -------------------------
 # ----------------------------------------------------------------
 
-COMPATIBLE_FILE_SUFFIXES = set(["c", "cpp", "cc", "h", "hpp", "cu", "hu"])
+COMPATIBLE_FILE_SUFFIXES = set(["c", "cpp", "cc", "h", "hpp", "cu", "hu", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
 skipped_files = []
@@ -367,6 +383,13 @@ def clear_folders(train_folder, valid_folder):
     
 
 if __name__ == "__main__":
+    
+    parser = Parser()
+    test_file = "data/raw/oneflow/stack_op.cpp"
+    parsed_objs = parser.process_file(test_file)
+    print(json.dumps(parsed_objs, indent=2))
+    sys.exit(0)
+    
     in_folder = "../raw"
     train_folder = "../processed/train"
     valid_folder = "../processed/valid"

@@ -92,7 +92,9 @@ def main():
     tokenizer : Tokenizer = Tokenizer.from_file(args.tokenizer)
     PAD_ID = tokenizer.token_to_id(PAD_TOKEN)
     d = torch.load(args.model)
-    model = Model(tokenizer.get_vocab_size(), 300, None, PAD_ID, **d["transformer_config"]).to(DEVICE)
+    embedd_dim = d["transformer_kwargs"]["embedd_dim"]
+    del d["transformer_kwargs"]["embedd_dim"]
+    model = Model(tokenizer.get_vocab_size(), embedd_dim, None, PAD_ID, **d["transformer_kwargs"]).to(DEVICE)
     model.load_state_dict(d["model_dict"])
     searcher = BeamSearch(model, tokenizer)
     

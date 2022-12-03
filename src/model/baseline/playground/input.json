@@ -1,6 +1,6 @@
 [
   {
-    "input": "/**\n * brief: Matrix multiplication function\n * param1 Matrix A\n * param2 Matrix B\n * returns Matrix\n**/",
+    "input": "brief: Matrix multiplication function\nparam1 Matrix A\nparam2 Matrix B\nreturns Matrix\n",
     "is_cuda": false
   },
   {

@@ -71,40 +71,46 @@ class DataSampler:
         return line       
                     
     def __clear_comment(self, comment : str) -> str:
-        clear_comment = []
-        comment = comment.replace("//", "")
-        comment = comment.replace(" * ", "")
-        comment_lines = comment.split("\n")
-        for line in comment_lines:
-            if line.lstrip().startswith("/") or line.rstrip().endswith("/"):
-                line = line.strip("/")
+        while comment:
+            if comment[0].isalpha():
+                break
+            comment = comment[1:]
             
-            if line.lstrip().startswith("*") or line.rstrip().endswith("*"):
-                line = line.strip("*")
-            
-            if line.lstrip().startswith("\\") or line.rstrip().endswith("\\"):
-                line = line.strip("\\")
-                
-            if line != "":
-                clear_comment.append(self.__clear_line(line))
-
-        clear_comment = " ".join(clear_comment)
-        return clear_comment
+        while comment:
+            if comment[-1].isalpha():
+                break
+            comment = comment[:-1]
+        
+        comment = comment.replace("/", "").replace("**", "").replace("--", "").replace("\\", "")
+        return comment
     
     def __get_basic_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
         
-        x = self.tokenizer.encode(self.__clear_comment(obj.get("comment", "")))
+        clear_comment = self.__clear_comment(obj.get("comment", ""))
+        x = self.tokenizer.encode(clear_comment)
         y = self.tokenizer.encode(obj.get("header", "") + obj.get("body", ""))
         
         assert len(x.ids) == len(x.tokens)
         assert len(y.ids) == len(y.tokens)  
         
+        # Too short snippet
         if len(x.ids) + len(y.ids) < self.min_x + self.min_y:
             return None
         
+        # Snippet is long enough but insufficient comment or body
         elif len(x.ids) < self.min_x or len(y.ids) < self.min_y:
-            # return self.__get_random_sample(obj)   
             return None
+            # tokens = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
+            # if len(tokens.ids) <= self.max_x + self.max_y - 2:
+            #     x_size = random.randint(self.min_x, min(len(tokens.ids) - self.min_y, self.max_x))
+            #     x_ids = tokens.ids[:x_size]
+            #     y_ids = tokens.ids[x_size:]
+            # else:
+            #     x_size = self.max_x
+            #     y_size = self.max_y-2
+            #     x_ids = tokens.ids[:x_size]
+            #     y_ids = tokens.ids[x_size:x_size + y_size]
+
         
         # 50 % chance of using code section in X input if snippet is bigger than max size
         elif len(x.ids) + len(y.ids) > self.max_x + self.max_y and np.random.random() < 0.5:
@@ -115,9 +121,7 @@ class DataSampler:
                     return None
                 
                 x_ids = x.ids[:x_size]
-                x_str = self.tokenizer.decode(x_ids, skip_special_tokens=True)
                 y_ids = x.ids[x_size:] + y.ids[:y_size]
-                y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
                 
             else: # len(y.ids) > self.max_y
                 x_size = len(x.ids)
@@ -146,37 +150,10 @@ class DataSampler:
                 "y" : y_ids, 
                 "y_str" : y_str
                }
-    
-    def __get_random_sample(self, obj : Dict[str, str]) -> Dict[str, str]:
-        encoding = self.tokenizer.encode(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
-        ids_len = len(encoding.ids)
-        if ids_len < self.min_x + self.min_y:
-            return None
-        
-        assert len(encoding.ids) == len(encoding.tokens)
-
-        x_size = random.randint(self.min_x, min(self.max_x, ids_len - self.min_y))
-        y_size = random.randint(self.min_y, min(self.max_y-2, ids_len - x_size))
-        pivot = random.randint(x_size, ids_len - y_size)
-        
-        x, x_str = self.__align_x(encoding, x_size, pivot)
-        y, y_str = self.__align_y(encoding, y_size, obj.get("is_gpu", False), pivot)
-        
-        if x is None or y is None:
-            return None
-        
-        return {
-                "x" : x, 
-                "x_str" : x_str,
-                "y" : y, 
-                "y_str" : y_str,
-                "is_gpu" : obj.get("is_gpu", False)
-               }
             
     def sample(self, 
                parsed_objects : List[Dict[str, str]], 
-               samples_per_obj : int = 1, 
-               max_tries : int = None) -> List[Dict]:
+               *args, **kwargs) -> List[Dict]:
 
         samples = []
         parsed_objects = flatten_object_list(parsed_objects)
@@ -187,43 +164,6 @@ class DataSampler:
                 samples.append(sample)
                 
         return samples
-        
-        # if samples_per_obj < 1:
-        #     return samples
-        
-        # sample_n = samples_per_obj * len(parsed_objects)
-        # tries_left = sample_n * 10 if max_tries is None else max_tries
-        
-        # if self.basic_first_samples:
-            
-        #     parsed_objects = self.__shuffle_objects(parsed_objects)
-            
-        #     for parsed_obj in parsed_objects:
-        #         sample = self.__get_basic_sample(parsed_obj)
-        #         if sample is not None:
-        #             samples.append(sample)          
-        #             sample_n -= 1
-                
-        #         tries_left -= 1
-        #         if tries_left < 1:
-        #             return samples
-        
-        
-        # parsed_objects = self.__shuffle_objects(parsed_objects)
-            
-        # while sample_n > 0:        
-        #     parsed_obj = self.__get_random_object(parsed_objects)
-        #     sample = self.__get_random_sample(parsed_obj)
-        #     if sample is not None:
-        #         samples.append(sample)
-        #         sample_n -= 1
-            
-        #     tries_left -= 1
-        #     if tries_left < 1:
-        #         break
-
-        
-        # return samples
     
     def get_token_id(self, token : str) -> int:
         return self.tokenizer.token_to_id(token)

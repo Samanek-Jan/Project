@@ -58,7 +58,7 @@ class ObjectParser:
                 end_comment = line.find("*/")
                 if end_comment > -1:
                     char_count += end_comment
-                    comment.append(line[:end_comment])
+                    comment.append(line[:end_comment+2].strip())
                     self.parsed_object["comment"] = "\n".join(comment)
                     return content[char_count:].strip()      
                 else:

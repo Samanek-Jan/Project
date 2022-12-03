@@ -30,7 +30,7 @@ class ClassParser:
             end_bracket = body.rfind("}")
             if start_bracket > -1 and end_bracket > start_bracket:
                 inner_parser = parser.Parser()
-                body = body[start_bracket+1 : end_bracket]
+                body = body[start_bracket+1 : end_bracket].strip()
                 self.parsed_class["inner_objects"] = inner_parser.process_str(body, filename)
         
         return self.parsed_class
@@ -62,7 +62,7 @@ class ClassParser:
                 end_comment = line.find("*/")
                 if end_comment > -1:
                     char_count += end_comment
-                    comment.append(line[:end_comment])
+                    comment.append(line[:end_comment+2].strip())
                     self.parsed_class["comment"] = "\n".join(comment)
                     return content[char_count:].strip()         
                 else:

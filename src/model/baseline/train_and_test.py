@@ -7,6 +7,7 @@ import torchmetrics
 from tqdm import tqdm
 import argparse
 import transformers
+import json
 
 from src.datasets.config import CUDA_BOS_TOKEN, PAD_TOKEN
 from src.datasets.dataset import CollateFunctor, Dataset
@@ -62,12 +63,7 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    best_model = train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n)
-    best_model["transformer_config"] = transformer_kwargs
-
-    model_name = f"baseline_model.pt"
-    full_path = os.path.join(MODELS_OUT_FOLDER, model_name)
-    torch.save(best_model, full_path) 
+    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, embedd_dim = args.embedd_dim, **transformer_kwargs)
     print("Done")
 
 
@@ -75,7 +71,9 @@ def train_and_test(model,
                    train_dataloader, 
                    test_dataloader, 
                    eval_every_n     = 1, 
-                   epoch_n          = 1):
+                   epoch_n          = 1,
+                   model_name       = "baseline_model.pt",
+                   **transformer_kwargs):
     
     best_version = {"BLEU" : float("-inf")}
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
@@ -112,28 +110,35 @@ def train_and_test(model,
         bleu_score.reset()
                 
         if epoch % eval_every_n == 0:
-            bleu, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader)
+            pbar_prefix = f"[{epoch}/{epoch_n}]"
+            bleu, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
             bv_bleu = best_version["BLEU"]
             print(f"{epoch}. best ver. BLEU. = {bv_bleu:.3f}, currect ver. BLEU. = {bleu:.3f}")
             if bv_bleu < bleu:
                 best_version = {
                     "model_dict" : deepcopy(model.state_dict()),
+                    "optimizer_dict" : deepcopy(optimizer.state_dict()),
                     "BLEU" : bleu,
                     "epoch" : epoch,
                     "source_sentences" : source_sentences,
                     "target_sentences" : target_sentences,
                     "pred_sentences" : pred_sentences,
+                    "transformer_kwargs" : transformer_kwargs
                 }
+                    
+                full_path = os.path.join(MODELS_OUT_FOLDER, model_name)
+                torch.save(best_version, full_path) 
         
         print(f"Training bleu score = {score_val:.3f}")
         print(f"Example of translations")
-        rand_inds = torch.randint(0, len(target_sentences), (2,))
+        rand_inds = torch.randint(0, len(target_sentences), (3,))
         for i in rand_inds:
-            print("source:\n\t{}\n\ntarget:\n\t{}\nprediction:\n\t{}\n".format(source_sentences[i], target_sentences[i][0], pred_sentences[i]))
-            # print(source_sentences[i])
-            # print(target_sentences[i][0])
-            # print(pred_sentences[i])
-            # print()
+            obj = {
+                "source" : source_sentences[i],
+                "target" : target_sentences[i][0],
+                "predic" : pred_sentences[i]
+            }
+            print(json.dumps(obj, indent=2))
         print("--------------------------------\n")
         
         if bleu > max_bleu:
@@ -145,7 +150,7 @@ def train_and_test(model,
 
 
 @torch.no_grad()
-def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True):
+def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True, pbar_prefix=""):
     model.eval()
     sources_list = []
     sentences_target = []
@@ -170,7 +175,7 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
         sentences_target.extend([[sentence] for sentence in targets_str])
         sentences_pred.extend(predictions_str)
         
-        test_dataloader.set_description("BLEU score: {:.3f}".format(bleu_score_metric(sentences_pred, sentences_target)))
+        test_dataloader.set_description("{} BLEU score: {:.3f}".format(pbar_prefix, bleu_score_metric(sentences_pred, sentences_target)))
 
     bleu_score = bleu_score_metric(sentences_pred, sentences_target)
 

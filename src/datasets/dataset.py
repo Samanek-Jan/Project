@@ -126,35 +126,30 @@ class CollateFunctor:
 
 if __name__ == "__main__":
     from tokenizers import Tokenizer
+    import random
+    import time, json
+    # seed = time.time()
+    # seed = 1669752279.1380951
+    # print("used seed '{}'".format(seed))
+    # random.seed(seed)
     in_folder_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/processed/train"
     tokenizer_path = "/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_20000.json"
     data_sampler_kwargs = {"min_x" : 10, "max_x" : 160, "min_y" : 5, "max_y" : 160, "tokenizer_path" : tokenizer_path}
     dataset = Dataset(in_folder_path, 10, True, 5,**data_sampler_kwargs)
     tokenizer : Tokenizer = Tokenizer.from_file(tokenizer_path)
-    
-    # BOS_CUDA_ID = tokenizer.token_to_id(CUDA_BOS_TOKEN)
-    # BOS_CPP_ID = tokenizer.token_to_id(CPP_BOS_TOKEN)
-    
-    # cpp_sentence_counter = 0
-    # cuda_sentence_counter = 0
-    # for i in tqdm(range(10000)):
-    #     x, x_str, y, y_str = dataset.__getitem__(0)
-    #     if y[0] == BOS_CUDA_ID:
-    #         cuda_sentence_counter += 1
-    #     elif y[0] == BOS_CPP_ID:
-    #         cpp_sentence_counter += 1
-    #     else:
-    #         raise ValueError("Weird start id : {}, token: {}".format(y[0], tokenizer.id_to_token(y[0])))
-    
-    # print("Number of sentences:")
-    # print(" - cuda sentence counter: {}".format(cuda_sentence_counter))
-    # print(" - cpp sentence counter: {}".format(cpp_sentence_counter))
-    # print(" - cuda ratio: {:.2%}".format(cuda_sentence_counter / (cuda_sentence_counter + cpp_sentence_counter)))
-    
+
     while True:
         x , x_str, y, y_str = dataset.__getitem__(0)
-        print("x_str:\n\t{}\n".format(x_str))
-        print("y_str:\n\t{}\n-----------------------------------------\n\n".format(y_str))
+        obj = {
+            "x_str" : x_str,
+            "y_str" : y_str,
+            "x_size" : len(x),
+            "y_size" : len(y)
+        }
+        print(json.dumps(obj, indent=2))
+        print("-----------------------------------------\n\n")
+        # print("x_str:\n\t{}\n".format(x_str))
+        # print("y_str:\n\t{}\n-----------------------------------------\n\n".format(y_str))
         
         # print([tokenizer.id_to_token(id) for id in x])
         # print()

@@ -1,5 +1,8 @@
 
-
+class ProcessingObjectException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        
 class ParsingFunctionException(Exception):
 
     def __init__(self, message):
@@ -34,3 +37,4 @@ class InvalidParameterException(Exception):
     
     def __init__(self, message):
         super().__init__(message)
+        

@@ -1,6 +1,6 @@
 
 PARSING_TYPES = ["object", "struct", "class", "function"]
-MIN_INNER_LEN_PARSING = 100
+MIN_INNER_LEN_PARSING = 500
 
 PARSED_OBJECT_TEMPLATE = {
     "comment"       : "",

@@ -37,7 +37,9 @@ class GreedySearch:
             if stop.all():
                 break
 
-        sentences = self.tokenizer.decode_batch(target.tolist(), skip_special_tokens=True)
+        
+        target = target[:,1:-1].tolist()
+        sentences = self.tokenizer.decode_batch(target, skip_special_tokens=False)
         return sentences
 
 
@@ -116,5 +118,5 @@ class BeamSearch:
             else:
                 best_targets.append(sorted(candidates[batch], key=lambda x: x[1], reverse=True)[0][0].tolist())
 
-        sentences = self.tokenizer.decode_batch(best_targets, skip_special_tokens=True)
+        sentences = self.tokenizer.decode_batch(best_targets, skip_special_tokens=False)
         return sentences
