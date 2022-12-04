@@ -1,3 +1,4 @@
+from typing import List
 from tokenizers import Tokenizer
 import torch
 import torch.nn as nn
@@ -8,6 +9,24 @@ from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TO
 from model.baseline.config import DEVICE, MAX_Y
 from model.baseline.models import Model
 
+def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List = [CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN]):
+    
+    exclude_tokens_set = set()
+    for token in exclude_tokens:
+        exclude_tokens.append(tokenizer.token_to_id(token))
+        
+    clean_batch = []
+    for sentence in batch:
+        clean_sentence = []
+        for id in sentence:
+            if not id in exclude_tokens_set:
+                clean_sentence.append(id)
+                
+        clean_batch.append(clean_sentence)
+
+    return clean_batch
+        
+        
 class GreedySearch:
     def __init__(self, model : Model, tokenizer : Tokenizer, max_length : int = MAX_Y):
         self.model = model
@@ -38,21 +57,21 @@ class GreedySearch:
                 break
 
         
-        target = target[:,1:-1].tolist()
-        sentences = self.tokenizer.decode_batch(target, skip_special_tokens=False)
+        target = target.tolist()
+        sentences = self.tokenizer.decode_batch(clear_sentences(self.tokenizer, target), skip_special_tokens=False)
         return sentences
 
 
 class BeamSearch:
-    def __init__(self, model, tokenizer, beam_size=4, max_length=MAX_Y):
+    def __init__(self, model, tokenizer : Tokenizer, beam_size : int = 4, max_length : int = MAX_Y):
         self.model = model
         self.tokenizer = tokenizer
         self.beam_size = beam_size
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id("[BOSCUDA]")
-        self.bos_cpp_id = tokenizer.token_to_id("[BOSCPP]")
-        self.eos_id = tokenizer.token_to_id("[EOS]")
+        self.bos_cuda_id = tokenizer.token_to_id(CUDA_BOS_TOKEN)
+        self.bos_cpp_id = tokenizer.token_to_id(CPP_BOS_TOKEN)
+        self.eos_id = tokenizer.token_to_id(EOS_TOKEN)
         self.vocab_size = tokenizer.get_vocab_size()
 
     @torch.no_grad()
@@ -118,5 +137,5 @@ class BeamSearch:
             else:
                 best_targets.append(sorted(candidates[batch], key=lambda x: x[1], reverse=True)[0][0].tolist())
 
-        sentences = self.tokenizer.decode_batch(best_targets, skip_special_tokens=False)
+        sentences = self.tokenizer.decode_batch(clear_sentences(self.tokenizer, best_targets), skip_special_tokens=True)
         return sentences

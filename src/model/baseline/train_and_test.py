@@ -31,6 +31,7 @@ def main():
     argument_parser.add_argument("--dropout", "-d", type=float, default=0.1)
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=3)
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
+    argument_parser.add_argument("--model", "-m", type=str, default=None)
     args = argument_parser.parse_args()
     
     data_sampler_kwargs = {
@@ -41,13 +42,28 @@ def main():
         "tokenizer_path" : args.tokenizer
     }
     
-    transformer_kwargs = { 
-                        "num_encoder_layers" : args.num_encoder_layers, 
-                        "num_decoder_layers" : args.num_decoder_layers,
-                        "hidden_size" : args.embedd_dim,
-                        "num_heads" : args.num_heads,
-                        "dropout" : args.dropout
-                        }
+    model_d = None
+    if args.model is None:
+        transformer_kwargs = { 
+                            "num_encoder_layers" : args.num_encoder_layers, 
+                            "num_decoder_layers" : args.num_decoder_layers,
+                            "hidden_size" : args.embedd_dim,
+                            "num_heads" : args.num_heads,
+                            "dropout" : args.dropout
+                            }
+        embedd_dim = args.embedd_dim
+    
+    else:
+        model_d = torch.load(args.model)
+        transformer_kwargs = {
+            "num_encoder_layers" : model_d["transformer_kwargs"]["num_encoder_layers"],
+            "num_decoder_layers" : model_d["transformer_kwargs"]["num_decoder_layers"],
+            "hidden_size" : model_d["transformer_kwargs"]["hidden_size"],
+            "num_heads" : model_d["transformer_kwargs"]["num_heads"],
+            "dropout" : model_d["transformer_kwargs"]["dropout"]
+        }
+        
+        embedd_dim = model_d["transformer_kwargs"]["embedd_dim"]
     
     train_dataset = Dataset(in_folder=args.train_folder, epoch_len=args.epoch_size, samples_per_obj=10, **data_sampler_kwargs)
     valid_dataset = Dataset(args.valid_folder, epoch_len=args.epoch_size//10, shuffle=True, samples_per_obj=10, **data_sampler_kwargs)
@@ -59,17 +75,20 @@ def main():
     
     loss_fce = nn.CrossEntropyLoss(ignore_index=-1)
     
-    model = Model(train_dataset.get_vocab_size(), args.embedd_dim, loss_fce, PAD_ID, **transformer_kwargs).to(DEVICE)
+    model = Model(train_dataset.get_vocab_size(), embedd_dim, loss_fce, PAD_ID, **transformer_kwargs).to(DEVICE)
+    if not model_d is None:
+        model.load_state_dict(model_d["model_dict"]) 
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, embedd_dim = args.embedd_dim, **transformer_kwargs)
+    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, embedd_dim = embedd_dim, model_d=model_d, **transformer_kwargs)
     print("Done")
 
 
 def train_and_test(model, 
                    train_dataloader, 
-                   test_dataloader, 
+                   test_dataloader,
+                   model_d          = None,
                    eval_every_n     = 1, 
                    epoch_n          = 1,
                    model_name       = "baseline_model.pt",
@@ -77,6 +96,8 @@ def train_and_test(model,
     
     best_version = {"BLEU" : float("-inf")}
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    if not model_d is None:
+        optimizer.load_state_dict(model_d["optimizer_dict"])
     # optimizer = transformer_AdamW_LLRD(model)
     scheduler = LinearLR(optimizer)
     
