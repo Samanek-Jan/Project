@@ -9,11 +9,11 @@ from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TO
 from model.baseline.config import DEVICE, MAX_Y
 from model.baseline.models import Model
 
-def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List = [CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN]):
+def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List[str] = [CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN]):
     
     exclude_tokens_set = set()
     for token in exclude_tokens:
-        exclude_tokens.append(tokenizer.token_to_id(token))
+        exclude_tokens_set.add(tokenizer.token_to_id(token))
         
     clean_batch = []
     for sentence in batch:
