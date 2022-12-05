@@ -1,10 +1,10 @@
 [
   {
-    "input": "brief: Matrix multiplication function\nparam1 Matrix A\nparam2 Matrix B\nreturns Matrix\n",
+    "input": "Vector - Scalar Multiplication Multiplication by std : : size _ t is required by thrust : : sequence. _ _ host _ _ _ _ device _ _ Vector operator * ( const std : : size _ t a, const Vector b",
     "is_cuda": false
   },
   {
-    "input": "/**\n * brief: Matrix multiplication function\n * param1 Matrix A\n * param2 Matrix B\n * returns Matrix\n**/",
+    "input": "Vector - Scalar Multiplication Multiplication by std : : size _ t is required by thrust : : sequence. _ _ host _ _ _ _ device _ _ Vector operator * ( const std : : size _ t a, const Vector b",
     "is_cuda": true
   }
 ]

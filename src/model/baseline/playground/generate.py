@@ -91,7 +91,7 @@ def main():
         
     tokenizer : Tokenizer = Tokenizer.from_file(args.tokenizer)
     PAD_ID = tokenizer.token_to_id(PAD_TOKEN)
-    d = torch.load(args.model)
+    d = torch.load(args.model, map_location=DEVICE)
     embedd_dim = d["transformer_kwargs"]["embedd_dim"]
     del d["transformer_kwargs"]["embedd_dim"]
     model = Model(tokenizer.get_vocab_size(), embedd_dim, None, PAD_ID, **d["transformer_kwargs"]).to(DEVICE)
