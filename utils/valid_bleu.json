@@ -1,0 +1,398 @@
+[
+  {
+    "current": 0.001,
+    "best": 0.0
+  },
+  {
+    "current": 0.002,
+    "best": 0.001
+  },
+  {
+    "current": 0.004,
+    "best": 0.002
+  },
+  {
+    "current": 0.01,
+    "best": 0.004
+  },
+  {
+    "current": 0.01,
+    "best": 0.01
+  },
+  {
+    "current": 0.004,
+    "best": 0.01
+  },
+  {
+    "current": 0.011,
+    "best": 0.01
+  },
+  {
+    "current": 0.008,
+    "best": 0.011
+  },
+  {
+    "current": 0.016,
+    "best": 0.011
+  },
+  {
+    "current": 0.014,
+    "best": 0.016
+  },
+  {
+    "current": 0.023,
+    "best": 0.016
+  },
+  {
+    "current": 0.026,
+    "best": 0.023
+  },
+  {
+    "current": 0.046,
+    "best": 0.026
+  },
+  {
+    "current": 0.045,
+    "best": 0.046
+  },
+  {
+    "current": 0.051,
+    "best": 0.046
+  },
+  {
+    "current": 0.047,
+    "best": 0.051
+  },
+  {
+    "current": 0.051,
+    "best": 0.051
+  },
+  {
+    "current": 0.056,
+    "best": 0.051
+  },
+  {
+    "current": 0.059,
+    "best": 0.056
+  },
+  {
+    "current": 0.069,
+    "best": 0.059
+  },
+  {
+    "current": 0.092,
+    "best": 0.069
+  },
+  {
+    "current": 0.052,
+    "best": 0.092
+  },
+  {
+    "current": 0.081,
+    "best": 0.092
+  },
+  {
+    "current": 0.089,
+    "best": 0.092
+  },
+  {
+    "current": 0.102,
+    "best": 0.092
+  },
+  {
+    "current": 0.062,
+    "best": 0.102
+  },
+  {
+    "current": 0.118,
+    "best": 0.102
+  },
+  {
+    "current": 0.091,
+    "best": 0.118
+  },
+  {
+    "current": 0.109,
+    "best": 0.118
+  },
+  {
+    "current": 0.091,
+    "best": 0.118
+  },
+  {
+    "current": 0.112,
+    "best": 0.118
+  },
+  {
+    "current": 0.119,
+    "best": 0.118
+  },
+  {
+    "current": 0.103,
+    "best": 0.119
+  },
+  {
+    "current": 0.105,
+    "best": 0.119
+  },
+  {
+    "current": 0.118,
+    "best": 0.119
+  },
+  {
+    "current": 0.124,
+    "best": 0.119
+  },
+  {
+    "current": 0.085,
+    "best": 0.124
+  },
+  {
+    "current": 0.135,
+    "best": 0.124
+  },
+  {
+    "current": 0.109,
+    "best": 0.135
+  },
+  {
+    "current": 0.128,
+    "best": 0.135
+  },
+  {
+    "current": 0.104,
+    "best": 0.135
+  },
+  {
+    "current": 0.122,
+    "best": 0.135
+  },
+  {
+    "current": 0.106,
+    "best": 0.135
+  },
+  {
+    "current": 0.13,
+    "best": 0.135
+  },
+  {
+    "current": 0.137,
+    "best": 0.135
+  },
+  {
+    "current": 0.144,
+    "best": 0.137
+  },
+  {
+    "current": 0.111,
+    "best": 0.144
+  },
+  {
+    "current": 0.116,
+    "best": 0.144
+  },
+  {
+    "current": 0.139,
+    "best": 0.144
+  },
+  {
+    "current": 0.1,
+    "best": 0.144
+  },
+  {
+    "current": 0.142,
+    "best": 0.144
+  },
+  {
+    "current": 0.114,
+    "best": 0.144
+  },
+  {
+    "current": 0.131,
+    "best": 0.144
+  },
+  {
+    "current": 0.121,
+    "best": 0.144
+  },
+  {
+    "current": 0.133,
+    "best": 0.144
+  },
+  {
+    "current": 0.132,
+    "best": 0.144
+  },
+  {
+    "current": 0.128,
+    "best": 0.144
+  },
+  {
+    "current": 0.148,
+    "best": 0.144
+  },
+  {
+    "current": 0.116,
+    "best": 0.148
+  },
+  {
+    "current": 0.144,
+    "best": 0.148
+  },
+  {
+    "current": 0.155,
+    "best": 0.148
+  },
+  {
+    "current": 0.142,
+    "best": 0.155
+  },
+  {
+    "current": 0.124,
+    "best": 0.155
+  },
+  {
+    "current": 0.134,
+    "best": 0.155
+  },
+  {
+    "current": 0.12,
+    "best": 0.155
+  },
+  {
+    "current": 0.141,
+    "best": 0.155
+  },
+  {
+    "current": 0.12,
+    "best": 0.155
+  },
+  {
+    "current": 0.155,
+    "best": 0.155
+  },
+  {
+    "current": 0.13,
+    "best": 0.155
+  },
+  {
+    "current": 0.163,
+    "best": 0.155
+  },
+  {
+    "current": 0.166,
+    "best": 0.163
+  },
+  {
+    "current": 0.105,
+    "best": 0.166
+  },
+  {
+    "current": 0.148,
+    "best": 0.166
+  },
+  {
+    "current": 0.145,
+    "best": 0.166
+  },
+  {
+    "current": 0.145,
+    "best": 0.166
+  },
+  {
+    "current": 0.123,
+    "best": 0.166
+  },
+  {
+    "current": 0.156,
+    "best": 0.166
+  },
+  {
+    "current": 0.138,
+    "best": 0.166
+  },
+  {
+    "current": 0.149,
+    "best": 0.166
+  },
+  {
+    "current": 0.129,
+    "best": 0.166
+  },
+  {
+    "current": 0.144,
+    "best": 0.166
+  },
+  {
+    "current": 0.157,
+    "best": 0.166
+  },
+  {
+    "current": 0.132,
+    "best": 0.166
+  },
+  {
+    "current": 0.148,
+    "best": 0.166
+  },
+  {
+    "current": 0.173,
+    "best": 0.166
+  },
+  {
+    "current": 0.123,
+    "best": 0.173
+  },
+  {
+    "current": 0.164,
+    "best": 0.173
+  },
+  {
+    "current": 0.151,
+    "best": 0.173
+  },
+  {
+    "current": 0.129,
+    "best": 0.173
+  },
+  {
+    "current": 0.165,
+    "best": 0.173
+  },
+  {
+    "current": 0.142,
+    "best": 0.173
+  },
+  {
+    "current": 0.153,
+    "best": 0.173
+  },
+  {
+    "current": 0.134,
+    "best": 0.173
+  },
+  {
+    "current": 0.161,
+    "best": 0.173
+  },
+  {
+    "current": 0.155,
+    "best": 0.173
+  },
+  {
+    "current": 0.168,
+    "best": 0.173
+  },
+  {
+    "current": 0.154,
+    "best": 0.173
+  },
+  {
+    "current": 0.142,
+    "best": 0.173
+  },
+  {
+    "current": 0.166,
+    "best": 0.173
+  }
+]

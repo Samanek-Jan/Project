@@ -3,7 +3,7 @@ import json
 import os
 from typing import Dict, List
 from tokenizers import Tokenizer
-from tokenizers.models import BPE
+from tokenizers.models import BPE, Unigram, WordPiece
 from tokenizers.trainers import BpeTrainer
 from tokenizers.processors import TemplateProcessing
 import tokenizers.decoders as decoders

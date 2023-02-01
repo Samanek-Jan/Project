@@ -46,7 +46,7 @@ class Parser:
         self.current_code_block   : List[str]          = []
         self.current_parsing_type : str                = None    # One of [None, class, function, struct]
         self.bracket_counter      : int                = 0
-        self.parsedObjectList     : List               = []
+        self.parsed_object_list     : List               = []
         self.is_current_file_gpu  : bool               = False
         self.line_counter         : int                = 1
         self.is_parsing_comment   : bool               = False
@@ -114,7 +114,7 @@ class Parser:
             return self.__process_str(lines, filename)
         
     def __reset(self):
-        self.parsedObjectList.clear()
+        self.parsed_object_list.clear()
         self.current_status = "r"
         self.bracket_counter = 0
         self.line_counter = 1
@@ -138,7 +138,7 @@ class Parser:
             self.current_status = self.automata_states[self.current_status](line)
             self.line_counter += 1
             
-        return self.parsedObjectList
+        return self.parsed_object_list
                 
     def __ready_parsing_state(self, line : str) -> str:
         line = line.strip()
@@ -246,7 +246,12 @@ class Parser:
         gpu_keywords = ["__device__", "__global__", "__host__", "__constant__"]
         is_gpu = self.is_current_file_gpu or any([keyword in tokens for keyword in gpu_keywords])
         try:
-            self.parsedObjectList.append(self.parsers[self.current_parsing_type].process(self.current_code_block, is_gpu, self.filename))
+            parsed_object = self.parsers[self.current_parsing_type].process(self.current_code_block, is_gpu, self.filename)
+            parsed_inner_object_list = filter(lambda obj: obj["comment"] != "", parsed_object["inner_objects"])
+            self.parsed_object_list.extend(parsed_inner_object_list)
+            if parsed_object["comment"] != "":
+                parsed_object["inner_objects"] = []
+                self.parsed_object_list.append(parsed_object)
         except Exception as e:
             raise ProcessingObjectException(f"Processing object on line {self.line_counter} failed with error: {str(e)}")
         
@@ -345,7 +350,9 @@ def parse_folder(in_folder : str,
 
         try:
             parsed_objects = parser.process_file(file)
-            if is_train_data:
+            if len(parsed_objects) == 0:
+                continue
+            elif is_train_data:
                 train_files_counter += 1
                 train_data_counter += sum([data_counter(parsed_obj) for parsed_obj in parsed_objects])
                 train_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
@@ -384,11 +391,11 @@ def clear_folders(train_folder, valid_folder):
 
 if __name__ == "__main__":
     
-    parser = Parser()
-    test_file = "data/raw/oneflow/stack_op.cpp"
-    parsed_objs = parser.process_file(test_file)
-    print(json.dumps(parsed_objs, indent=2))
-    sys.exit(0)
+    # parser = Parser()
+    # test_file = "data/raw/oneflow/stack_op.cpp"
+    # parsed_objs = parser.process_file(test_file)
+    # print(json.dumps(parsed_objs, indent=2))
+    # sys.exit(0)
     
     in_folder = "../raw"
     train_folder = "../processed/train"

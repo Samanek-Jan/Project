@@ -4,7 +4,7 @@
     "is_cuda": false
   },
   {
-    "input": "Vector - Scalar Multiplication Multiplication by std : : size _ t is required by thrust : : sequence. _ _ host _ _ _ _ device _ _ Vector operator * ( const std : : size _ t a, const Vector b",
+    "input": "function for matrix multiplication for given Matrices A and B",
     "is_cuda": true
   }
 ]

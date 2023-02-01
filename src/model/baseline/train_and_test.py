@@ -94,7 +94,7 @@ def train_and_test(model,
                    model_name       = "baseline_model.pt",
                    **transformer_kwargs):
     
-    best_version = {"BLEU" : float("-inf")}
+    best_version = {"BLEU" : float("-inf") if model_d is None else model_d["BLEU"]}
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     if not model_d is None:
         optimizer.load_state_dict(model_d["optimizer_dict"])
@@ -132,14 +132,15 @@ def train_and_test(model,
                 
         if epoch % eval_every_n == 0:
             pbar_prefix = f"[{epoch}/{epoch_n}]"
-            bleu, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
+            bleu, rouge, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
             bv_bleu = best_version["BLEU"]
-            print(f"{epoch}. best ver. BLEU. = {bv_bleu:.3f}, currect ver. BLEU. = {bleu:.3f}")
+            print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
             if bv_bleu < bleu:
                 best_version = {
                     "model_dict" : deepcopy(model.state_dict()),
                     "optimizer_dict" : deepcopy(optimizer.state_dict()),
                     "BLEU" : bleu,
+                    "ROUGE" : rouge,
                     "epoch" : epoch,
                     "source_sentences" : source_sentences,
                     "target_sentences" : target_sentences,
@@ -199,12 +200,13 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
         test_dataloader.set_description("{} BLEU score: {:.3f}".format(pbar_prefix, bleu_score_metric(sentences_pred, sentences_target)))
 
     bleu_score = bleu_score_metric(sentences_pred, sentences_target)
+    rouge_score = torchmetrics.functional.rouge_score(sentences_pred, sentences_target)["rougeL_fmeasure"]
 
     # print(f"BLEU score: {bleu_score.compute() * 100.0}")
     # score_val = bleu_score.compute()
     # bleu_score.reset()
     
-    return float(bleu_score), (sources_list, sentences_target, sentences_pred)
+    return float(bleu_score), float(rouge_score), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0

@@ -12,3 +12,5 @@ data/parser/skipped_files.log
 models/
 src/model/baseline/playground/output.json
 data/processed.zip
+data/processed/processed.zip
+screenlog.*
