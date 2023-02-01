@@ -18,10 +18,6 @@ class ParsingClassException(Exception):
     def __init__(self, message):
         super().__init__(message)
         
-class InvalidStateException(Exception):
-    
-    def __init__(self, message):
-        super().__init__(message)
         
 class BracketCountErrorException(Exception):
     
@@ -34,6 +30,11 @@ class InvalidTypeException(Exception):
         super().__init__(message)
         
 class InvalidParameterException(Exception):
+    
+    def __init__(self, message):
+        super().__init__(message)
+        
+class InvalidCharacterException(Exception):
     
     def __init__(self, message):
         super().__init__(message)

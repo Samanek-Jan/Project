@@ -1,54 +1,28 @@
-from configparser import ParsingError
 import json
+import re
 import sys, os
 import random
 from typing import Dict, Generator, Iterable, List
-import data.parser.class_parser as class_parser
-import data.parser.function_parser as function_parser
-import data.parser.object_parser as object_parser
-from data.parser.parser_exceptions import BracketCountErrorException, InvalidStateException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
-from data.parser.struct_parser import StructParser
 from copy import deepcopy
 from tqdm import tqdm
 
-READY_AUTOMATA_STATE = "r"
-DOXYGEN_AUTOMATA_STATE = "d"
-ONE_LINE_COMMENT_AUTOMATA_STATE = "olc"
-CODE_AUTOMATA_STATE = "c"
-INVALID_AUTOMATA_STATE = "i"
-FINISH_AUTOMATA_STATE = "f"
+from data.parser.parser_exceptions import BracketCountErrorException, InvalidCharacterException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
+from data.parser.parsing_object import PARSING_OBJECTS, PARSING_TYPES
 
-class_keyword = "class"
-struct_keyword = "struct"
 GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
+COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, "cpp", "h", "cc", "hpp", "rc"])
+DATA_FILE_SUFFIX = ".data.json"
+
+skipped_files = []
+    
 
 class Parser:
 
     def __init__(self):
-        # self.logger = logging.getLogger('Parser').setLevel(logging.INFO)
-        self.parsers = {
-            "class": class_parser.ClassParser(),
-            "struct": StructParser(),
-            "function": function_parser.FunctionParser(),
-            "object": object_parser.ObjectParser(),
-        }
         
-        self.automata_states = {
-            READY_AUTOMATA_STATE            : self.__ready_parsing_state, # Ready to parse state
-            DOXYGEN_AUTOMATA_STATE          : self.__parsing_doxygen_state, # Doxygen state
-            ONE_LINE_COMMENT_AUTOMATA_STATE : self.__parsing_one_line_comment_state, # One line comment state
-            CODE_AUTOMATA_STATE             : self.__parsing_code_state, # Code state
-            INVALID_AUTOMATA_STATE          : self.__parsing_invalid_state, # Invalid status state
-            FINISH_AUTOMATA_STATE           : self.__object_ready_state, # Finish block state (Should never reach here)
-        }
-        
-        self.current_status       : str                = READY_AUTOMATA_STATE # basically enum of automata states
-        self.current_code_block   : List[str]          = []
-        self.current_parsing_type : str                = None    # One of [None, class, function, struct]
         self.bracket_counter      : int                = 0
         self.parsed_object_list     : List               = []
         self.is_current_file_gpu  : bool               = False
-        self.line_counter         : int                = 1
         self.is_parsing_comment   : bool               = False
         self.filename             : str                = ""
         
@@ -95,7 +69,7 @@ class Parser:
         """
         
         # self.logger.debug(f'Processing {filename}')
-        return self.__process_str(content.split("\n"), filename)
+        return self.__process_str(content, filename)
 
     def __is_file_valid(self, filename : str) -> bool:
         """ Checking if file exists
@@ -106,162 +80,155 @@ class Parser:
         Returns:
             bool: flag indicating whether file exists
         """
-        return os.path.isfile(filename)
+        return os.path.isfile(filename) and filename.split(".")[-1] in COMPATIBLE_FILE_SUFFIXES
 
     def __process_file(self, filename : str) -> List:
         with open(filename, 'r', encoding='latin-1') as fd:
-            lines = fd.readlines()
-            return self.__process_str(lines, filename)
+            content = fd.read()
+            return self.__process_str(content, filename)
         
     def __reset(self):
-        self.parsed_object_list.clear()
-        self.current_status = "r"
-        self.bracket_counter = 0
-        self.line_counter = 1
         self.is_parsing_comment = False
     
-    def __process_str(self, lines : Iterable[str], filename : str) -> List:
-        
-        """ Processing a file content
-        
-        Args:
-            filename (str): path to input file
-            
-        Returns:
-            List[ParsedObject]: Lexical list of parsed objects
-        """
+    def __process_str(self, content : str, filename : str) -> List:
         
         self.__reset()
-        self.filename = filename
         
-        for _, line in enumerate(lines):
-            self.current_status = self.automata_states[self.current_status](line)
-            self.line_counter += 1
-            
-        return self.parsed_object_list
-                
-    def __ready_parsing_state(self, line : str) -> str:
-        line = line.strip()
-        if line.startswith("/*"):
-            return self.__parsing_doxygen_state(line) # Return doxygen state
+        content_idx = 0
+        line_idx = 0
+        comment = []
+        parsed_objects = []
         
-        elif line.startswith("//"):
-            return self.__parsing_one_line_comment_state(line) # Return one line comment state
-        
-        elif len(line.strip()) > 0:
-            return self.__parsing_code_state(line)
-
-        else:
-            self.current_code_block.clear()                
-            return READY_AUTOMATA_STATE # Return ready for parsing state
-    
-    def __parsing_doxygen_state(self, line: str) -> str:
-        self.current_code_block.append(line.rstrip())
-        if line.rstrip().endswith("*/"):
-            return READY_AUTOMATA_STATE
-        else:
-            return DOXYGEN_AUTOMATA_STATE
+        while content_idx < len(content):
+            line = self.__get_line(content, content_idx)
+            line_idx += 1
+            stripped_line = line.strip()
             
-        
-    def __parsing_one_line_comment_state(self, line: str) -> str:
-        self.current_code_block.append(line.rstrip())
-        return READY_AUTOMATA_STATE # Return ready state
-    
-    def __parsing_code_state(self, line: str) -> str:
-        
-        if self.current_parsing_type is not None:
-
-            self.current_code_block.append(line.rstrip())
-            self.bracket_counter += self.count_brackets(line)
-            
-            if self.bracket_counter == 0:
-                return self.__object_ready_state()
-
-            elif self.bracket_counter < 0:
-                message = f"Error counting brackets with result {self.bracket_counter} on line {self.line_counter}\n"
-                # self.logger.error(message)
-                raise BracketCountErrorException(message)
-            
-            return CODE_AUTOMATA_STATE
-        
-        else:    
-            if line.strip() == "":
-                self.current_parsing_type = "object"
-                return self.__object_ready_state()
-            
-            tokens = line.split(" ")
-            self.current_code_block.append(line.rstrip())
-            self.bracket_counter += self.count_brackets(line)
-            
-            # Is class
-            if self.current_parsing_type == None and class_keyword in tokens:
-                self.current_parsing_type = "class"
-            
-            # Is struct
-            elif self.current_parsing_type == None and struct_keyword in tokens:
-                self.current_parsing_type = "struct"
-            
-            # Is probably definition of a function
-            elif self.bracket_counter > 0:
-                self.current_parsing_type = "function"
-            
-            # Error parsing brackets
-            elif self.bracket_counter < 0:
-                message = f"Error counting brackets with result {self.bracket_counter} on line {self.line_counter}\n"
-                # self.logger.error(message)
-                raise BracketCountErrorException(message)
-            
-            # Only declaration
-            elif line.find(";") != -1:
-                self.current_parsing_type = "object" if self.current_parsing_type == None else self.current_parsing_type
-                return self.__object_ready_state()
-            
-            return CODE_AUTOMATA_STATE
-
-
-    def __parsing_invalid_state(self, line: str) -> str:
-        self.current_parsing_type = None  
-        self.current_code_block.clear()
-        
-        if self.bracket_counter > 0:
-            self.bracket_counter += self.count_brackets(line)
-            if self.bracket_counter == 0:
-                return READY_AUTOMATA_STATE
+            if self.__is_comment(line):
+                comment += line.rstrip()
+                content_idx += len(line)
+            elif stripped_line == "":
+                comment.clear()
+                content_idx += len(line)
             else:
-                return INVALID_AUTOMATA_STATE
-        
-        elif self.bracket_counter < 0:
-            message = f"Error counting brackets with result {self.bracket_counter} on line {self.line_counter}\n"
-            # self.logger.error(message)
-            raise BracketCountErrorException(message)
-        
-        else:
-            return READY_AUTOMATA_STATE if line.strip() == "" else INVALID_AUTOMATA_STATE
-        
-    def __object_ready_state(self, *args):
-        if self.current_parsing_type == None:
-            raise ParsingError(f"No type of parsed object on line {self.line_counter}")
-        
-        tokens = set(".\n".join(self.current_code_block).split(" "))
-        gpu_keywords = ["__device__", "__global__", "__host__", "__constant__"]
-        is_gpu = self.is_current_file_gpu or any([keyword in tokens for keyword in gpu_keywords])
-        try:
-            parsed_object = self.parsers[self.current_parsing_type].process(self.current_code_block, is_gpu, self.filename)
-            parsed_inner_object_list = filter(lambda obj: obj["comment"] != "", parsed_object["inner_objects"])
-            self.parsed_object_list.extend(parsed_inner_object_list)
-            if parsed_object["comment"] != "":
-                parsed_object["inner_objects"] = []
-                self.parsed_object_list.append(parsed_object)
-        except Exception as e:
-            raise ProcessingObjectException(f"Processing object on line {self.line_counter} failed with error: {str(e)}")
-        
-        self.current_status = READY_AUTOMATA_STATE
-        self.current_code_block.clear()
-        self.current_parsing_type = None
-        
-        return READY_AUTOMATA_STATE
+            # elif len(comment) > 0:
+                header = self.__check_for_header(content, content_idx)
+                if header is None:
+                    content_idx += len(line)
+                    comment.clear()
+                    continue
                 
+                content_idx += len(header)
+                body : str = self.__check_for_body(content, content_idx)
+                if body is None:
+                    comment.clear()
+                    continue
+                content_idx += len(body)
+                parsing_type = self.__determine_code_type(header)
+                parsing_object = PARSING_OBJECTS.get(parsing_type, None)
+                parsing_object["comment"] = ".\n".join(comment)
+                parsing_object["header"] = header
+                parsing_object["type"] = parsing_type
+                parsing_object["body"] = body
+                parsing_object["is_from_cuda_file"] = self.is_current_file_gpu
+                parsing_object["is_cuda"] = self.__is_cuda_function(header, parsing_type)
+                
+                if parsing_type == PARSING_TYPES.CLASS:
+                    inner_parser = Parser()
+                    body_start_idx = body.find("{") + 1
+                    body_end_idx = body.rfind("}")
+                    parsed_objects.extend(inner_parser.process_str(body[body_start_idx : body_end_idx]))
+                elif parsing_type == PARSING_OBJECTS.OBJECT:
+                    inner_parser = Parser()
+                    body_start_idx = body.find("{") + 1
+                    body_end_idx = body.rfind("}")
+                    inner_parsed_objects = inner_parser.process_str(body[body_start_idx : body_end_idx])
+                    if len(inner_parsed_objects) > 0:
+                        parsed_objects.extend(inner_parsed_objects)
+                    else:
+                        parsed_objects.append(parsing_object)
+                    
+                    comment = []
         
+            # else:
+            #     content_idx += len(line)
+        return parsed_objects
+          
+    def __is_cuda_function(self, header : str, code_type : PARSING_TYPES):
+        if code_type != PARSING_TYPES.FUNCTION:
+            return False
+        
+        return header.find("__device__") != -1 or header.find("__global__") != 1 or header.find("__host__") != 1
+        
+            
+    def __determine_code_type(self, header : str) -> PARSING_TYPES:
+
+        class_regex = re.compile(r"^.*\s+(class)\s+.*$")
+        struct_regex = re.compile(r"^.*\s+(class)\s+.*$")
+        function_regex = re.compile(r"^(\S+\s+)+\S+\s*\((\s*\S+\s+\S+\s*,?)+\)\s*$")
+        
+        
+        if class_regex.match(header) is not None or struct_regex.match(header) is not None:
+            return PARSING_TYPES.CLASS
+        header = header.replace("\n", " ")
+        if function_regex.match(header) is not None:
+            return PARSING_TYPES.FUNCTION
+
+        return PARSING_TYPES.OBJECT
+                
+    def __check_for_body(self, content : str, body_start_idx : int) -> str:
+        body_idx = body_start_idx
+        if content[body_idx] != "{":
+            raise InvalidCharacterException("Start body character is not '{'")
+        
+        bracket_counter = 0
+        while body_idx < len(content):
+            line = self.__get_line(content, body_idx)
+            bracket_counter += self.count_brackets(line)
+            if bracket_counter == 0:
+                return content[body_start_idx : body_idx + len(line)]
+            if bracket_counter < 0:
+                raise BracketCountErrorException("Got problems with brackets!")
+            else:
+                body_idx += len(line)
+                
+        return None
+        
+    def __check_for_header(self, content : str, content_idx : int, max_header_size = 160) -> str:
+        
+        body_start = content.find("{", content_idx, content_idx + max_header_size)
+        if body_start == -1:
+            return None
+        
+        header = content[content_idx : body_start]
+        header_lines = header.split("\n")
+        for header_line in header_lines:
+            header_line = header_line.strip()
+            if self.__is_comment(header_line) or header_line == "":
+                return None
+            
+        return header 
+    
+    def __get_line(self, content : str, idx : int):
+        
+        nl_char_index = idx
+        while nl_char_index < len(content) and content[nl_char_index] != "\n":
+            nl_char_index += 1
+            
+        return content[idx: nl_char_index+1]
+    
+    def __is_comment(self, line : str) -> bool:
+        if line.lstrip().startswith("//"):
+            return True
+        elif line.lstrip().startswith("/*"):
+            self.is_parsing_comment = True
+            return True
+        elif self.is_parsing_comment and line.find("*/") != -1:
+            self.is_parsing_comment = False
+            return True
+        
+        return False
+    
     def count_brackets(self, line : str):
         is_in_comment_block = self.is_parsing_comment
         bracket_sum = 0
@@ -289,11 +256,6 @@ class Parser:
 # ----------------------------------------------------------------
 # ------------------------ END OF PARSER -------------------------
 # ----------------------------------------------------------------
-
-COMPATIBLE_FILE_SUFFIXES = set(["c", "cpp", "cc", "h", "hpp", "cu", "hu", "rc"])
-DATA_FILE_SUFFIX = ".data.json"
-
-skipped_files = []
 
 def fetch_files(in_folder : str) -> List[str]:
     wanted_files = []
@@ -369,7 +331,7 @@ def parse_folder(in_folder : str,
         except Exception as e:
             # print("Skipped file\n")
             skipped_files.append({"file" : file, "exception" : str(e)})    
-            
+        
     print("Train data stats:")
     print("\tTotal files: %d" % train_files_counter)
     print("\tTotal data: %d" % train_data_counter)
@@ -379,6 +341,9 @@ def parse_folder(in_folder : str,
     print("\tTotal files: %d" % valid_files_counter)
     print("\tTotal data: %d" % valid_data_counter)
     print("\tTotal char. len: %d" % valid_char_counter)
+    
+    if train_files_counter == 0 or valid_files_counter == 0:
+        return 
     
     print("Train ratio by data: {:.2%}".format(train_data_counter / (train_data_counter + valid_data_counter)))
     print("Train ratio by char: {:.2%}".format(train_char_counter / (train_char_counter + valid_char_counter)))
