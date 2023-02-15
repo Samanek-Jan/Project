@@ -7,7 +7,7 @@ from copy import deepcopy
 from tqdm import tqdm
 
 from data.parser.parser_exceptions import BracketCountErrorException, InvalidCharacterException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
-from data.parser.parsing_object import PARSING_OBJECTS, PARSING_TYPES
+from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE, PARSING_OBJECTS, PARSING_TYPES
 
 GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, "cpp", "h", "cc", "hpp", "rc"])
@@ -87,136 +87,186 @@ class Parser:
             content = fd.read()
             return self.__process_str(content, filename)
         
-    def __reset(self):
-        self.is_parsing_comment = False
     
     def __process_str(self, content : str, filename : str) -> List:
         
-        self.__reset()
-        
-        content_idx = 0
-        line_idx = 0
-        comment = []
         parsed_objects = []
+        comments = self.__get_comments(content)
         
-        while content_idx < len(content):
-            line = self.__get_line(content, content_idx)
-            line_idx += 1
-            stripped_line = line.strip()
+        for comment in comments:
+            end_comment_idx = comment["end_idx"]
+            while self.__get_line(content, end_comment_idx).strip() == "":
+                break
+                
+            body_start_idx = content.find("{", end_comment_idx)
+            if body_start_idx == -1:
+                continue
             
-            if self.__is_comment(line):
-                comment += line.rstrip()
-                content_idx += len(line)
-            elif stripped_line == "":
-                comment.clear()
-                content_idx += len(line)
-            else:
-            # elif len(comment) > 0:
-                header = self.__check_for_header(content, content_idx)
-                if header is None:
-                    content_idx += len(line)
-                    comment.clear()
-                    continue
-                
-                content_idx += len(header)
-                body : str = self.__check_for_body(content, content_idx)
-                if body is None:
-                    comment.clear()
-                    continue
-                content_idx += len(body)
-                parsing_type = self.__determine_code_type(header)
-                parsing_object = PARSING_OBJECTS.get(parsing_type, None)
-                parsing_object["comment"] = ".\n".join(comment)
-                parsing_object["header"] = header
-                parsing_object["type"] = parsing_type
-                parsing_object["body"] = body
-                parsing_object["is_from_cuda_file"] = self.is_current_file_gpu
-                parsing_object["is_cuda"] = self.__is_cuda_function(header, parsing_type)
-                
-                if parsing_type == PARSING_TYPES.CLASS:
-                    inner_parser = Parser()
-                    body_start_idx = body.find("{") + 1
-                    body_end_idx = body.rfind("}")
-                    parsed_objects.extend(inner_parser.process_str(body[body_start_idx : body_end_idx]))
-                elif parsing_type == PARSING_OBJECTS.OBJECT:
-                    inner_parser = Parser()
-                    body_start_idx = body.find("{") + 1
-                    body_end_idx = body.rfind("}")
-                    inner_parsed_objects = inner_parser.process_str(body[body_start_idx : body_end_idx])
-                    if len(inner_parsed_objects) > 0:
-                        parsed_objects.extend(inner_parsed_objects)
-                    else:
-                        parsed_objects.append(parsing_object)
+            header = content[end_comment_idx:body_start_idx]
+            if not self.__is_cuda_function(header.replace("\n", " ")):
+                continue
+            
+            body = self.__parse_body(content, body_start_idx)
+            if body == "":
+                continue
+            
+            parsed_objects.append({
+                "comment"       : comment["comment"],
+                "body"          : body,
+                "header"        : header,
+                "type"          : "function",
+                "is_cuda"        : True,
+                "is_from_cuda_file" : self.is_current_file_gpu,
+                "filename" : filename
+            })
                     
-                    comment = []
-        
-            # else:
-            #     content_idx += len(line)
         return parsed_objects
-          
-    def __is_cuda_function(self, header : str, code_type : PARSING_TYPES):
-        if code_type != PARSING_TYPES.FUNCTION:
-            return False
-        
-        return header.find("__device__") != -1 or header.find("__global__") != 1 or header.find("__host__") != 1
-        
+    
+    def __parse_body(self, content, body_start_idx):
+        i = body_start_idx
+        self.is_parsing_comment = False
+        bracket_count = 0
+        body = ""
+        while i < len(content):
+            line = self.__get_line(content, i)
+            bracket_count += self.count_brackets(line)
+            if bracket_count == 0:
+                last_bracket_idx = line.rfind("}")
+                line = line[:last_bracket_idx]
+                body = content[body_start_idx:i + len(line)+1]
+                break
+            if bracket_count < 0:
+                for _ in range(-bracket_count):
+                    last_bracket_idx = line.rfind("}")
+                    if last_bracket_idx == -1:
+                        raise ValueError("parser.__process_str: Failed to retract body brackets")
+                    line = line[:last_bracket_idx]
+                body = content[body_start_idx:i + len(line)+1]
+                break
+            i += len(line)
             
-    def __determine_code_type(self, header : str) -> PARSING_TYPES:
-
-        class_regex = re.compile(r"^.*\s+(class)\s+.*$")
-        struct_regex = re.compile(r"^.*\s+(class)\s+.*$")
-        function_regex = re.compile(r"^(\S+\s+)+\S+\s*\((\s*\S+\s+\S+\s*,?)+\)\s*$")
+        return body
+    
+    def line_start_with(self, content : str, idx : int) -> bool:
+        while idx > 0:
+            idx -= 1
+            if content[idx] == "\n":
+                return True
+            elif content[idx].isalnum():
+                return False
+            
+        return True
+    
+    def __get_comments(self, content : str) -> List[Dict]:
+        comments = []
+        i = 0
         
-        
-        if class_regex.match(header) is not None or struct_regex.match(header) is not None:
-            return PARSING_TYPES.CLASS
-        header = header.replace("\n", " ")
-        if function_regex.match(header) is not None:
-            return PARSING_TYPES.FUNCTION
-
-        return PARSING_TYPES.OBJECT
+        while i < len(content):
+            block_comment_start_idx = content.find("/*", i)
+            if  block_comment_start_idx == -1 or                        \
+                not self.line_start_with(content, block_comment_start_idx):
                 
-    def __check_for_body(self, content : str, body_start_idx : int) -> str:
-        body_idx = body_start_idx
-        if content[body_idx] != "{":
-            raise InvalidCharacterException("Start body character is not '{'")
+                break
+            
+            block_comment_end_idx = content.find("*/", i)
+            comments.append( 
+                {
+                    "comment" : self.__transform_comment(content[block_comment_start_idx:block_comment_end_idx]), 
+                    "start_idx" : block_comment_start_idx, 
+                    "end_idx" : block_comment_end_idx + 2
+                }
+            )
+            i += block_comment_start_idx + block_comment_end_idx - i
+            
+        i = 0
+        while i < len(content):
+            line_comment_start_idx = content.find("//", i)
+            if line_comment_start_idx == -1 or            \
+                not self.line_start_with(content, line_comment_start_idx):
+                    
+                break
+            
+            i += line_comment_start_idx - i
+            
+            comment_lines = []
+            while i < len(content):
+                line = self.__get_line(content, line_comment_start_idx)
+                line = line.strip()
+                if not line.startswith("//"):
+                    comments.append(
+                        { 
+                            "comment" : "".join(comment_lines), 
+                            "start_idx" : line_comment_start_idx,
+                            "end_idx" : i
+                        }
+                    )
+                    break
+                comment_lines.append(line)
+                i += len(line)
+                
+        return comments
+            
+            
         
-        bracket_counter = 0
-        while body_idx < len(content):
-            line = self.__get_line(content, body_idx)
-            bracket_counter += self.count_brackets(line)
-            if bracket_counter == 0:
-                return content[body_start_idx : body_idx + len(line)]
-            if bracket_counter < 0:
-                raise BracketCountErrorException("Got problems with brackets!")
+    
+    def __parse_comment(self, content : str, content_idx : int) -> str:
+        one_line_comment_idx = content.find("//")
+        block_comment_idx = content.find("/*")
+        
+        if one_line_comment_idx >= 0:
+            if block_comment_idx >= 0 and block_comment_idx <= one_line_comment_idx:
+                end_comment_idx = content.find("*/", content_idx)
+                return content[block_comment_idx: end_comment_idx]
             else:
-                body_idx += len(line)
+                comment_lines = []
+                while content_idx < len(content):
+                    line = self.__get_line(content, content_idx)
+                    content_idx += len(line)
+                    line = line.strip()
+                    if not line.startswith("//"):
+                        return "".join(comment_lines)
+                    
+                    comment_lines.append(line)
+                    
+                return "".join(comment_lines)
+
+        elif block_comment_idx >= 0:
+            end_comment_idx = content.find("*/", content_idx)
+            return content[block_comment_idx: end_comment_idx]
+            
+        else:
+            raise Exception("parser.__parse_comment: No comment found")
+        
+    def __get_line(self, content : str, start_idx : int) -> str:
+        end_idx = start_idx
+        while end_idx < len(content):
+            c = content[end_idx]
+            if c == '\n':
+                return content[start_idx: end_idx + 1]
+            end_idx += 1
+            
+        return content[start_idx: end_idx]
+        
+    def __transform_comment(self, comment : str) -> str:
+        comment_lines = comment.split("\n")
+        i = 0
+        for line in comment_lines:
+            line = line.strip()
+            for j, c in enumerate(line):
+                if c.isalnum():
+                    if len(line[j:]) == 0:
+                        comment_lines.pop(i)
+                    else:
+                        comment_lines[i] = line[j:]
+                        i += 1
+                    break
                 
-        return None
-        
-    def __check_for_header(self, content : str, content_idx : int, max_header_size = 160) -> str:
-        
-        body_start = content.find("{", content_idx, content_idx + max_header_size)
-        if body_start == -1:
-            return None
-        
-        header = content[content_idx : body_start]
-        header_lines = header.split("\n")
-        for header_line in header_lines:
-            header_line = header_line.strip()
-            if self.__is_comment(header_line) or header_line == "":
-                return None
+        return "\n".join(comment_lines)
             
-        return header 
-    
-    def __get_line(self, content : str, idx : int):
+    def __is_cuda_function(self, line : str) -> bool:
+        cuda_function_header_regex = r"^\s*(template<.+>)?\s*(__device__|__host__|__global__)+\s+\S+\s+\S+\(.*\)\s*$"
+        return re.match(cuda_function_header_regex, line) != None
         
-        nl_char_index = idx
-        while nl_char_index < len(content) and content[nl_char_index] != "\n":
-            nl_char_index += 1
-            
-        return content[idx: nl_char_index+1]
-    
     def __is_comment(self, line : str) -> bool:
         if line.lstrip().startswith("//"):
             return True
@@ -228,6 +278,23 @@ class Parser:
             return True
         
         return False
+    
+    def __remove_comment(self, line : str) -> str:
+        if self.is_parsing_comment:
+            return ""
+        
+        if (line_comment_start_idx := line.find("//")) != -1:
+            return line[:line_comment_start_idx]
+        
+        if (block_comment_start_idx := line.find("/*")) != -1:
+            if (block_comment_end_idx := line.find("*/", block_comment_start_idx)) != -1:
+                return line[:block_comment_start_idx] + line[block_comment_end_idx+2:]
+            return line[:block_comment_start_idx]
+        
+        if (block_comment_end_idx := line.find("*/") != -1): 
+            return line[block_comment_end_idx+2:]
+        
+        return line
     
     def count_brackets(self, line : str):
         is_in_comment_block = self.is_parsing_comment
@@ -316,12 +383,12 @@ def parse_folder(in_folder : str,
                 continue
             elif is_train_data:
                 train_files_counter += 1
-                train_data_counter += sum([data_counter(parsed_obj) for parsed_obj in parsed_objects])
+                train_data_counter += len(parsed_objects)
                 train_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
                 out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
             else:
                 valid_files_counter += 1
-                valid_data_counter += sum([data_counter(parsed_obj) for parsed_obj in parsed_objects])
+                valid_data_counter += len(parsed_objects)
                 valid_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
                 out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
 
