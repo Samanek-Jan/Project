@@ -91,29 +91,24 @@ class Parser:
     def __process_str(self, content : str, filename : str) -> List:
         
         parsed_objects = []
-        comments = self.__get_comments(content)
+        cuda_headers = self.__get_cuda_headers(content)
         
-        for comment in comments:
-            end_comment_idx = comment["end_idx"]
-            while self.__get_line(content, end_comment_idx).strip() == "":
-                break
-                
-            body_start_idx = content.find("{", end_comment_idx)
-            if body_start_idx == -1:
-                continue
+        # comments = self.__get_comments(content)
+        
+        for cuda_header in cuda_headers:
+            end_comment_idx = cuda_header["start_idx"]
+            body_start_idx = cuda_header["end_idx"]
             
-            header = content[end_comment_idx:body_start_idx]
-            if not self.__is_cuda_function(header.replace("\n", " ")):
-                continue
+            comment = self.__parse_comment(content, end_comment_idx)
             
             body = self.__parse_body(content, body_start_idx)
             if body == "":
                 continue
             
             parsed_objects.append({
-                "comment"       : comment["comment"],
+                "comment"       : comment,
+                "header"        : cuda_header["header"],
                 "body"          : body,
-                "header"        : header,
                 "type"          : "function",
                 "is_cuda"        : True,
                 "is_from_cuda_file" : self.is_current_file_gpu,
@@ -121,6 +116,42 @@ class Parser:
             })
                     
         return parsed_objects
+    
+    
+    def __get_cuda_headers(self, content : str) -> List:
+        # cuda_function_header_regex = r"^\s*(template<.+>)?\s*(__device__|__host__|__global__)+\s+\S+\s+\S+\(.*\)\s*$"
+        cuda_prefix_function_regex = r"(__device__|__host__|__global__)+"
+        template_regex = r"^\s*template<.+>\s*$"
+        lines = content.split("\n")
+        cuda_headers = []
+        
+        content_idx = 0
+        cuda_header = None
+        for i, line in enumerate(lines):
+            if cuda_header != None or re.match(cuda_prefix_function_regex, line):
+                if cuda_header is None and i > 0 and re.match(template_regex, lines[i-1].strip()):
+                    start_header_idx = content_idx - len(lines[i-1]) - 1
+                    cuda_header = {
+                        "start_idx" : start_header_idx,
+                    }
+                elif cuda_header is None:
+                    cuda_header = {
+                        "start_idx" : content_idx,
+                    }  
+                
+                if cuda_header is not None and (start_body_idx := line.find("{")) != -1:
+                    end_header_idx = content_idx + start_body_idx
+                    cuda_header["end_idx"] = end_header_idx
+                    cuda_header["header"] = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                    cuda_headers.append(cuda_header)
+                    cuda_header = None
+                elif cuda_header is not None and line.find(";") != -1:
+                    cuda_header = None
+                
+            content_idx += len(line)+1 # plus newline
+                
+        return cuda_headers
+    
     
     def __parse_body(self, content, body_start_idx):
         i = body_start_idx
@@ -207,35 +238,33 @@ class Parser:
         return comments
             
             
-        
+    def __get_line_back(self, content: str, end_idx : int) -> str:
+        start_idx = end_idx
+        while start_idx > 0:
+            start_idx += 1
+            if content[start_idx] == '\n':
+                return content[start_idx+1: end_idx]
+        return content[start_idx: end_idx]
     
-    def __parse_comment(self, content : str, content_idx : int) -> str:
-        one_line_comment_idx = content.find("//")
-        block_comment_idx = content.find("/*")
+    def __parse_comment(self, content : str, end_idx : int) -> str:
         
-        if one_line_comment_idx >= 0:
-            if block_comment_idx >= 0 and block_comment_idx <= one_line_comment_idx:
-                end_comment_idx = content.find("*/", content_idx)
-                return content[block_comment_idx: end_comment_idx]
-            else:
-                comment_lines = []
-                while content_idx < len(content):
-                    line = self.__get_line(content, content_idx)
-                    content_idx += len(line)
-                    line = line.strip()
-                    if not line.startswith("//"):
-                        return "".join(comment_lines)
-                    
-                    comment_lines.append(line)
-                    
-                return "".join(comment_lines)
-
-        elif block_comment_idx >= 0:
-            end_comment_idx = content.find("*/", content_idx)
-            return content[block_comment_idx: end_comment_idx]
-            
+        line = self.__get_line_back(content, end_idx)
+        if not line.strip().startswith("//") and not line.strip().endswith("*/"):
+            return ""
+        
+        comment_idx = end_idx - len(line)
+        line = line.strip()
+        comment = [line]
+        if line.startswith("//"):
+            while (line := self.__get_line_back(content, comment_idx)).strip().startswith("//"):
+                comment.append(line.strip())
+                comment_idx -= len(line)
+            return "".join(comment[::-1])
         else:
-            raise Exception("parser.__parse_comment: No comment found")
+            while not (line := self.__get_line_back(content, comment_idx)).strip().startswith("/*"):
+                comment.append(line.strip())
+                comment_idx -= len(line)
+            return "".join(comment[::-1])
         
     def __get_line(self, content : str, start_idx : int) -> str:
         end_idx = start_idx
@@ -369,8 +398,6 @@ def parse_folder(in_folder : str,
     valid_files_counter = 0
     valid_data_counter = 0
     valid_char_counter = 0
-    
-    data_counter = lambda parsed_obj: 1 if parsed_obj["inner_objects"] == [] else len(parsed_obj["inner_objects"])
     
     for file in pbar:
         pbar.set_postfix_str("/".join(file.split("/")[len(in_folder.split("/")):]))
