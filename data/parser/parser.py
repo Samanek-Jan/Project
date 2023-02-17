@@ -187,56 +187,7 @@ class Parser:
                 return False
             
         return True
-    
-    def __get_comments(self, content : str) -> List[Dict]:
-        comments = []
-        i = 0
-        
-        while i < len(content):
-            block_comment_start_idx = content.find("/*", i)
-            if  block_comment_start_idx == -1 or                        \
-                not self.line_start_with(content, block_comment_start_idx):
-                
-                break
-            
-            block_comment_end_idx = content.find("*/", i)
-            comments.append( 
-                {
-                    "comment" : self.__transform_comment(content[block_comment_start_idx:block_comment_end_idx]), 
-                    "start_idx" : block_comment_start_idx, 
-                    "end_idx" : block_comment_end_idx + 2
-                }
-            )
-            i += block_comment_start_idx + block_comment_end_idx - i
-            
-        i = 0
-        while i < len(content):
-            line_comment_start_idx = content.find("//", i)
-            if line_comment_start_idx == -1 or            \
-                not self.line_start_with(content, line_comment_start_idx):
-                    
-                break
-            
-            i += line_comment_start_idx - i
-            
-            comment_lines = []
-            while i < len(content):
-                line = self.__get_line(content, line_comment_start_idx)
-                line = line.strip()
-                if not line.startswith("//"):
-                    comments.append(
-                        { 
-                            "comment" : "".join(comment_lines), 
-                            "start_idx" : line_comment_start_idx,
-                            "end_idx" : i
-                        }
-                    )
-                    break
-                comment_lines.append(line)
-                i += len(line)
-                
-        return comments
-            
+ 
             
     def __get_line_back(self, content: str, end_idx : int) -> str:
         start_idx = end_idx
@@ -275,55 +226,6 @@ class Parser:
             end_idx += 1
             
         return content[start_idx: end_idx]
-        
-    def __transform_comment(self, comment : str) -> str:
-        comment_lines = comment.split("\n")
-        i = 0
-        for line in comment_lines:
-            line = line.strip()
-            for j, c in enumerate(line):
-                if c.isalnum():
-                    if len(line[j:]) == 0:
-                        comment_lines.pop(i)
-                    else:
-                        comment_lines[i] = line[j:]
-                        i += 1
-                    break
-                
-        return "\n".join(comment_lines)
-            
-    def __is_cuda_function(self, line : str) -> bool:
-        cuda_function_header_regex = r"^\s*(template<.+>)?\s*(__device__|__host__|__global__)+\s+\S+\s+\S+\(.*\)\s*$"
-        return re.match(cuda_function_header_regex, line) != None
-        
-    def __is_comment(self, line : str) -> bool:
-        if line.lstrip().startswith("//"):
-            return True
-        elif line.lstrip().startswith("/*"):
-            self.is_parsing_comment = True
-            return True
-        elif self.is_parsing_comment and line.find("*/") != -1:
-            self.is_parsing_comment = False
-            return True
-        
-        return False
-    
-    def __remove_comment(self, line : str) -> str:
-        if self.is_parsing_comment:
-            return ""
-        
-        if (line_comment_start_idx := line.find("//")) != -1:
-            return line[:line_comment_start_idx]
-        
-        if (block_comment_start_idx := line.find("/*")) != -1:
-            if (block_comment_end_idx := line.find("*/", block_comment_start_idx)) != -1:
-                return line[:block_comment_start_idx] + line[block_comment_end_idx+2:]
-            return line[:block_comment_start_idx]
-        
-        if (block_comment_end_idx := line.find("*/") != -1): 
-            return line[block_comment_end_idx+2:]
-        
-        return line
     
     def count_brackets(self, line : str):
         is_in_comment_block = self.is_parsing_comment
