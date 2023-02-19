@@ -5,16 +5,20 @@ import random
 from typing import Dict, Generator, Iterable, List
 from copy import deepcopy
 from tqdm import tqdm
+from pymongo import MongoClient
 
 from data.parser.parser_exceptions import BracketCountErrorException, InvalidCharacterException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
 from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE, PARSING_OBJECTS, PARSING_TYPES
+
+
+MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
+DATABASE_NAME = "cuda_snippets"
 
 GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, "cpp", "h", "cc", "hpp", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
 skipped_files = []
-    
 
 class Parser:
 
@@ -192,30 +196,44 @@ class Parser:
     def __get_line_back(self, content: str, end_idx : int) -> str:
         start_idx = end_idx
         while start_idx > 0:
-            start_idx += 1
+            start_idx -= 1
             if content[start_idx] == '\n':
                 return content[start_idx+1: end_idx]
         return content[start_idx: end_idx]
     
     def __parse_comment(self, content : str, end_idx : int) -> str:
         
-        line = self.__get_line_back(content, end_idx)
+        line = self.__get_line_back(content, end_idx-1)
         if not line.strip().startswith("//") and not line.strip().endswith("*/"):
             return ""
         
-        comment_idx = end_idx - len(line)
+        comment_idx = end_idx - len(line) - 1
         line = line.strip()
         comment = [line]
         if line.startswith("//"):
-            while (line := self.__get_line_back(content, comment_idx)).strip().startswith("//"):
+            while (line := self.__get_line_back(content, comment_idx)) != "" and line.strip().startswith("//"):
                 comment.append(line.strip())
-                comment_idx -= len(line)
-            return "".join(comment[::-1])
-        else:
-            while not (line := self.__get_line_back(content, comment_idx)).strip().startswith("/*"):
+                comment_idx -= (len(line) + 1)
+                "\n".join(comment[::-1])
+        elif line.find("/*") == -1:
+            while (line := self.__get_line_back(content, comment_idx)).find("/*") == -1:
                 comment.append(line.strip())
-                comment_idx -= len(line)
-            return "".join(comment[::-1])
+                comment_idx -= (len(line) + 1)
+            comment.append(line.strip())
+            return "\n".join(self.__transform_comment(comment[::-1]))
+        
+        return "\n".join(self.__transform_comment(comment[::-1]))
+    
+    def __transform_comment(self, comment : List[str]) -> List[str]:
+
+        transformer_comment = []
+        for line in comment:
+            for i, c in enumerate(line):
+                if c.isalnum():
+                    transformer_comment.append("// " + line[i:].strip())
+                    break
+        return transformer_comment
+        
         
     def __get_line(self, content : str, start_idx : int) -> str:
         end_idx = start_idx
@@ -255,14 +273,21 @@ class Parser:
 # ------------------------ END OF PARSER -------------------------
 # ----------------------------------------------------------------
 
-def fetch_files(in_folder : str) -> List[str]:
+def get_databases():
+    client = MongoClient(MONGODB_CONNECTION_STRING)
+    return client[DATABASE_NAME]
+
+def fetch_files(in_folder : str, root=True) -> List[str]:
     wanted_files = []
     files = [file for file in os.listdir(in_folder)]
+    if root:
+        files = tqdm(files, leave=False)
+
 
     for file in files:
         full_path = os.path.join(in_folder, file)
         if os.path.isdir(full_path):
-            wanted_files.extend(fetch_files(full_path))
+            wanted_files.extend(fetch_files(full_path, False))
         
         elif file.split(".")[-1] in COMPATIBLE_FILE_SUFFIXES:
             wanted_files.append(full_path)
@@ -287,6 +312,15 @@ def parse_folder(in_folder : str,
     
     elif train_ratio < 0 or train_ratio > 1:
         raise Exception("train ratio parameter out of bounds")
+    
+    print("Connecting to DB...", end="\r")
+    db = get_databases()
+    train = db["train"]
+    validation = db["validation"]
+    
+    # Start new collections
+    train.drop()
+    validation.drop()
     
     print("Fetching files...", end="\r")
     wanted_files = fetch_files(in_folder)
@@ -314,16 +348,18 @@ def parse_folder(in_folder : str,
                 train_files_counter += 1
                 train_data_counter += len(parsed_objects)
                 train_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
-                out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                train.insert_many(parsed_objects)
+                # out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
             else:
                 valid_files_counter += 1
                 valid_data_counter += len(parsed_objects)
                 valid_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
-                out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                # out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                validation.insert_many(parsed_objects)
 
             
-            with open(out_file, "w") as fd:
-                json.dump(parsed_objects, fd, indent=2)
+            # with open(out_file, "w") as fd:
+            #     json.dump(parsed_objects, fd, indent=2)
         except Exception as e:
             # print("Skipped file\n")
             skipped_files.append({"file" : file, "exception" : str(e)})    
