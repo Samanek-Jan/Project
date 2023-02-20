@@ -2,11 +2,15 @@ import sys, os
 import pandas as pd
 
 if __name__ == '__main__':
-    file_path = "../data/raw/bigQueryRepoLog.csv"
-    out_file = "../data/raw/bigQueryRepoLog_filtered.csv"
-    
-    df = pd.read_csv(file_path)
-    df = df.drop_duplicates(subset=['name'])
-    print(df[:10])
-    df.to_csv(out_file, sep=",")
+    files = [
+        "bq-results-repos-2019.csv",
+        "bq-results-repos-2020.csv",
+        "bq-results-repos-2021.csv",
+        "bq-results-repos-2022.csv",
+    ]
+    out_file = "bq-results-joint.csv"
+    out_df = pd.concat([pd.read_csv(file, index_col=False) for file in files])
+    out_df = out_df.drop_duplicates(subset=["name"])
+    print(f"{len(out_df)} rows")
+    out_df.to_csv(out_file, sep=",", index=False)
     
