@@ -18,3 +18,4 @@ utils/bq-results-repos-2019.csv
 utils/bq-results-repos-2020.csv
 utils/bq-results-repos-2021.csv
 utils/bq-results-repos-2022.csv
+cuda_test_file.cu

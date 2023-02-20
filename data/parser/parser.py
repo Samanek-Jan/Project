@@ -6,6 +6,7 @@ from typing import Dict, Generator, Iterable, List
 from copy import deepcopy
 from tqdm import tqdm
 from pymongo import MongoClient
+import random
 
 from data.parser.parser_exceptions import BracketCountErrorException, InvalidCharacterException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
 from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE, PARSING_OBJECTS, PARSING_TYPES
@@ -97,14 +98,16 @@ class Parser:
         parsed_objects = []
         cuda_headers = self.__get_cuda_headers(content)
         
-        # comments = self.__get_comments(content)
-        
         for cuda_header in cuda_headers:
             end_comment_idx = cuda_header["start_idx"]
             body_start_idx = cuda_header["end_idx"]
             
             comment = self.__parse_comment(content, end_comment_idx)
-            
+            has_generated_comment = False
+            if comment == "":
+                comment = self.__generate_default_comment(cuda_header["header"])
+                has_generated_comment = True
+                
             body = self.__parse_body(content, body_start_idx)
             if body == "":
                 continue
@@ -116,11 +119,62 @@ class Parser:
                 "type"          : "function",
                 "is_cuda"        : True,
                 "is_from_cuda_file" : self.is_current_file_gpu,
+                "has_generated_comment" : has_generated_comment,
                 "filename" : filename
             })
                     
         return parsed_objects
     
+    def __generate_default_comment(self, header : str) -> str:
+        
+        # Get kernel name
+        oneline_header = header.replace("\n", " ")
+        res = re.search(r"(^|.*\s+)(\S+)\s+(\S+)\s*\((.*)\).*", oneline_header)
+        
+        if res is None:
+            raise Exception("parser.__generate_default_comment: Error finding kernel name.")
+        
+        # Split name to multiple words
+        name = res[3]
+        words = []
+        word = ""
+        for c in name:
+            if c.isupper() and word != "":
+                words.append(word)
+                word = c.lower()
+            elif c == "_":
+                words.append(word)
+                word = ""
+            else:
+                word += c
+                
+        if word != "":
+            words.append(word)
+            
+        # Get parameters
+        params = map(lambda x: x.strip(), res[4].split(","))
+        params_dict = {}
+        for param in params:
+            param = param.split(" ")
+            param_name = param[-1]
+            params_dict[param_name] = "".join(param[:-1])
+        
+        generated_comment = """
+// {}{} for {}
+{}
+{}
+        """.format(res[1] + " " if random.random() > 0.5 else "", random.choice(["Function", "Method", "Kernel"]), " ".join(words) , self.__params_to_str(params_dict), f"// returns {res[2]}" if random.random() > 0.5 else "")
+        
+        return generated_comment.strip() + "\n"
+        
+    def __params_to_str(self, params_dict, prefix="// "):
+        print_types = random.random() < 0.5
+        s = ""
+        for i, (name, t) in enumerate(params_dict.items(), 1):
+            s += "{}{}. param. {}{},\n".format(prefix, i, t+" " if print_types else "", name)
+        
+        return s.rstrip()
+        
     
     def __get_cuda_headers(self, content : str) -> List:
         # cuda_function_header_regex = r"^\s*(template<.+>)?\s*(__device__|__host__|__global__)+\s+\S+\s+\S+\(.*\)\s*$"
@@ -285,6 +339,9 @@ def fetch_files(in_folder : str, root=True) -> List[str]:
 
 
     for file in files:
+        if root:
+            files.set_description("Fetching files")
+        
         full_path = os.path.join(in_folder, file)
         if os.path.isdir(full_path):
             wanted_files.extend(fetch_files(full_path, False))
@@ -322,59 +379,58 @@ def parse_folder(in_folder : str,
     train.drop()
     validation.drop()
     
-    print("Fetching files...", end="\r")
     wanted_files = fetch_files(in_folder)
     parser = Parser()
     pbar = tqdm(wanted_files, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     
-    train_files_counter = 0
     train_data_counter = 0
     train_char_counter = 0
     
-    valid_files_counter = 0
     valid_data_counter = 0
     valid_char_counter = 0
+
+    scaling_const = 100
+    variable_train_ratio = train_ratio * scaling_const
     
     for file in pbar:
         pbar.set_postfix_str("/".join(file.split("/")[len(in_folder.split("/")):]))
-        is_train_data = random.random() < train_ratio
-        out_folder = train_folder if is_train_data else valid_folder
 
         try:
             parsed_objects = parser.process_file(file)
             if len(parsed_objects) == 0:
                 continue
-            elif is_train_data:
-                train_files_counter += 1
-                train_data_counter += len(parsed_objects)
-                train_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
-                train.insert_many(parsed_objects)
-                # out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
-            else:
-                valid_files_counter += 1
-                valid_data_counter += len(parsed_objects)
-                valid_char_counter += len("".join([obj.get("comment", "") + obj.get("header", "") + obj.get("body", "") for obj in parsed_objects]))
-                # out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
-                validation.insert_many(parsed_objects)
+            
+            
+            for obj in parsed_objects:
+                is_train_data = random.random() * scaling_const < variable_train_ratio
+                if is_train_data or obj.get("has_generated_comment", False):
+                    variable_train_ratio -= (1-train_ratio)
+                    train_data_counter += 1
+                    train_char_counter += len(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
+                    train.insert_one(obj)
+                    # out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                else:
+                    variable_train_ratio += train_ratio
+                    valid_data_counter += 1
+                    valid_char_counter += len(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
+                    # out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                    validation.insert_one(obj)
 
             
             # with open(out_file, "w") as fd:
             #     json.dump(parsed_objects, fd, indent=2)
         except Exception as e:
-            # print("Skipped file\n")
             skipped_files.append({"file" : file, "exception" : str(e)})    
         
     print("Train data stats:")
-    print("\tTotal files: %d" % train_files_counter)
     print("\tTotal data: %d" % train_data_counter)
     print("\tTotal char. len: %d" % train_char_counter)          
 
     print("Valid data stats:")
-    print("\tTotal files: %d" % valid_files_counter)
     print("\tTotal data: %d" % valid_data_counter)
     print("\tTotal char. len: %d" % valid_char_counter)
     
-    if train_files_counter == 0 or valid_files_counter == 0:
+    if train_data_counter == 0 or valid_data_counter == 0:
         return 
     
     print("Train ratio by data: {:.2%}".format(train_data_counter / (train_data_counter + valid_data_counter)))
@@ -399,8 +455,8 @@ if __name__ == "__main__":
     valid_folder = "../processed/valid"
     train_ratio = 0.8
     
-    print("Cleaning folders...", end="\r")
-    clear_folders(train_folder, valid_folder)
+    # print("Cleaning folders...", end="\r")
+    # clear_folders(train_folder, valid_folder)
     
     parse_folder(in_folder, train_folder, valid_folder, train_ratio)
     
