@@ -1,9 +1,13 @@
+from ast import Dict
+from typing import Collection
 from pymongo import MongoClient
 import sys, os
 import subprocess
 import json
 from argparse import ArgumentParser
 from tqdm import tqdm
+from pymongo import MongoClient
+import pymongo
 
 def get_args():
     argparser = ArgumentParser()
@@ -23,18 +27,8 @@ def get_args():
 
 def compile(file_content):
     tmp_file = "cuda_test_file.cu"
-    main_function_prefix = """
-#define BLOCK_SIZE 64
-#define block_size 64
-#define blockSize 64
-
-int main() {
-    return 0;
-}
-    """
     
     with open(tmp_file, "w") as fd:
-        fd.write(main_function_prefix)
         fd.write(file_content)
     
     completedProcess = subprocess.run(["nvcc", tmp_file, "-o", f"{tmp_file}.o"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -46,42 +40,74 @@ int main() {
     return completedProcess.returncode, stdout, stderr
     
     
+def analyze_error(error_output : str) -> Dict:
+    ...
+
+def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection) -> str:
+    ...
+
+def validate_kernel(kernel : Dict, file_metadatas) -> Dict:
+
+    is_valid_kernel = False
+    kernel_str = "\n{}{}\n".format(kernel["header"], kernel["body"])
+    additional_content = """
+int main() \{
+    return 0;
+\}"""
+
+    kernel_validation = {
+        "error_stack" : [],
+        "stdout_stack" : [],
+        "retval_stack" : [],
+        "final_retval" : None,
+        "final_error" : None
+    }
+    
+    metadata : Dict = file_metadatas.findOne({"_id" : u"{}".format(kernel["file_metadata_id"])})
+    
+    while True:
+        
+        retval, stdout, stderr = compile("{}\n{}".format(additional_content, kernel_str))
+        kernel_validation["error_stack"].append(stderr)
+        kernel_validation["stdout_stack"].append(stdout)
+        kernel_validation["retval_stack"].append(retval)
+        
+        if retval == 0:
+            kernel_validation["final_retval"] = retval
+            kernel_validation["final_error"] = stderr
+            break
+        
+        error_analyses = analyze_error(stderr)
+        additional_content = apply_error_patch(error_analyses, metadata, file_metadatas)
+        if additional_content is None:
+            # Unknown error
+            kernel_validation["final_retval"] = retval
+            kernel_validation["final_error"] = stderr
+            break
+        
+    return kernel_validation
+            
+            
+    
 
 def validate_db():
     db = MongoClient("mongodb://localhost:27017")["cuda_snippets"]
     train = db["train"]
     validate = db["validate"]
+    file_metadatas = db["file_metadata"]
     error_dict = {}
-    validation = db["validation"]
-    validation.drop()
     
     print("Validating train part")
-    for obj in tqdm(tuple(train.find())):
-        retval, stdout, stderr = compile("\n{}{}\n".format(obj["header"], obj["body"]))
-        if retval != 0:
-            validation.insert(
-                {
-                "snippet_id" : obj["_id"],
-                "part" : "train",
-                "retval": retval,
-                "cause": stderr,
-                "stdout": stdout
-                }
-            )    
+    for kernel in tqdm(tuple(train.find())):
+        validation_result = validate_kernel(kernel, file_metadatas)
+        kernel["validation_result"] = validation_result
+        train.update_one({"_id" : u"{}".format(kernel["_id"])}, kernel)
     
     print("Validating validate part")
-    for obj in tqdm(tuple(validate.find())):
-        retval, stdout, stderr = compile("\n{}{}\n".format(obj["header"], obj["body"]))
-        if retval != 0:
-            validation.insert(
-                {
-                "snippet_id" : obj["_id"],
-                "part" : "train",
-                "retval": retval,
-                "cause": stderr,
-                "stdout": stdout
-                }
-            )
+    for kernel in tqdm(tuple(validate.find())):
+        validation_result = validate_kernel(kernel, file_metadatas)
+        kernel["validation_result"] = validation_result
+        validate.update_one({"_id" : u"{}".format(kernel["_id"])}, kernel)
             
     return error_dict
         

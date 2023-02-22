@@ -16,10 +16,12 @@ MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
 DATABASE_NAME = "cuda_snippets"
 
 GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
-COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, "cpp", "h", "cc", "hpp", "rc"])
+HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu"])
+COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-skipped_files = []
+IN_FOLDER = "../raw"
+TRAIN_RATIO = 0.8
 
 class Parser:
 
@@ -48,7 +50,7 @@ class Parser:
             self.filename = filename
             self.is_current_file_gpu = filename.split(".")[-1] in GPU_FILE_SUFFIXES
             return self.__process_file(filename)
-        return []
+        return [], {}
 
     def process_files(self, filenames : Iterable[str]) -> Generator[List, None, None]:
         """ Parse all given files
@@ -90,12 +92,12 @@ class Parser:
     def __process_file(self, filename : str) -> List:
         with open(filename, 'r', encoding='latin-1') as fd:
             content = fd.read()
-            return self.__process_str(content, filename)
+            return self.__process_str(content, os.path.split(filename)[1])
         
     
     def __process_str(self, content : str, filename : str) -> List:
         
-        parsed_objects = []
+        kernels = []
         cuda_headers = self.__get_cuda_headers(content)
         
         for cuda_header in cuda_headers:
@@ -112,7 +114,7 @@ class Parser:
             if body == "":
                 continue
             
-            parsed_objects.append({
+            kernels.append({
                 "comment"       : comment,
                 "header"        : cuda_header["header"],
                 "body"          : body,
@@ -122,9 +124,68 @@ class Parser:
                 "has_generated_comment" : has_generated_comment,
                 "filename" : filename
             })
-                    
-        return parsed_objects
+        
+        file_metadata = None
+        if len(kernels) > 0 or filename.split(".")[-1] in HEADER_FILE_SUFFIXES:
+            file_metadata = self.__get_file_metadata(content, filename)
+        
+        return kernels, file_metadata
     
+    def __get_file_metadata(self, content : str, filename : str):
+        file_metadata = {
+            "filename" : filename,
+        }
+    
+        includes, global_vars = self.__get_includes_and_global_vars(content)
+        file_metadata["includes"] = includes
+        file_metadata["global_vars"] = global_vars
+        
+        return file_metadata
+        
+    def __get_includes_and_global_vars(self, content : str):
+        includes = []
+        global_vars = []
+        lines = content.splitlines()
+        include_re = r"^\s*#include\s*(<|\")\s*(\S+)\s*(\"|>)\s*$"
+        define_re = r"^\s*#define\s+(\S+)\s+(.+)$"
+        global_var_re = r"^(.+)(?:(\s+(\S+))\s*)\s*;\s*$"
+        global_var_with_val_re = r"^(.+)(?:(\s+(\S+))\s*=)(.+)\s*;\s*$"
+        
+        for i, line in enumerate(lines, 1):
+            if (match := re.match(include_re, line)):
+                includes.append({
+                    "full_line" : match[0],
+                    "is_custom_include" : True if match[1] == "\"" else False,
+                    "include_name" : match[2].strip(),
+                    "is_header" : match[2].split(".")[-1] in HEADER_FILE_SUFFIXES,
+                    "line" : i
+                })
+            elif (match := re.match(define_re, line)):
+                global_vars.append({
+                    "full_line" : match[0],
+                    "name" : match[1].strip(),
+                    "value" : match[2].strip(),
+                    "line" : i
+                })
+            elif (match := re.match(global_var_with_val_re, line)):
+                global_vars.append({
+                    "full_line" : match[0],
+                    "type" : match[1].strip(),
+                    "name" : match[3].strip().lstrip("*").lstrip("&"),
+                    "value" : match.group(4).strip(),
+                    "line" : i
+                })
+            # elif (match := re.match(global_var_re, line)):
+            #     global_vars.append({
+            #         "full_line" : match[0],
+            #         "type" : match[1],
+            #         "name" : match[3],
+            #         "value" : None,
+            #         "line" : i
+            #     })
+        
+        return includes, global_vars
+        
     def __generate_default_comment(self, header : str) -> str:
         
         # Get kernel name
@@ -327,11 +388,11 @@ class Parser:
 # ------------------------ END OF PARSER -------------------------
 # ----------------------------------------------------------------
 
-def get_databases():
+def get_database():
     client = MongoClient(MONGODB_CONNECTION_STRING)
     return client[DATABASE_NAME]
 
-def fetch_files(in_folder : str, root=True) -> List[str]:
+def fetch_files(in_folder : str, root_path = "", repo_name = None, root=True) -> List[str]:
     wanted_files = []
     files = [file for file in os.listdir(in_folder)]
     if root:
@@ -340,46 +401,47 @@ def fetch_files(in_folder : str, root=True) -> List[str]:
 
     for file in files:
         if root:
-            files.set_description("Fetching files")
+            files.set_description(f"Fetching files ({len(wanted_files)})")
         
         full_path = os.path.join(in_folder, file)
         if os.path.isdir(full_path):
-            wanted_files.extend(fetch_files(full_path, False))
+            if repo_name is None:
+                repo_name = file
+            wanted_files.extend(fetch_files(full_path, os.path.join(root_path, file), repo_name, False))
         
         elif file.split(".")[-1] in COMPATIBLE_FILE_SUFFIXES:
-            wanted_files.append(full_path)
+            wanted_files.append(
+                {
+                    "full_path" : full_path,
+                    "root_path" : os.path.join(root_path, file),
+                    "repo_name" : repo_name
+                }
+            )
             
     return wanted_files
 
 
-def parse_folder(in_folder : str, 
-                 train_folder : str, 
-                 valid_folder : str, 
-                 train_ratio : float
-                 ) -> None:
+def parse_folder() -> None:
     
-    if not os.path.isdir(in_folder):
-        raise Exception("in folder '%s' does not exist" % in_folder)
+    if not os.path.isdir(IN_FOLDER):
+        raise Exception("in folder '%s' does not exist" % IN_FOLDER)
     
-    elif not os.path.exists(train_folder):
-        raise Exception("train folder '%s' does not exist" % train_folder)
-    
-    elif not os.path.exists(valid_folder):
-        raise Exception("valid folder '%s' does not exist" % valid_folder)
-    
-    elif train_ratio < 0 or train_ratio > 1:
+    elif TRAIN_RATIO < 0 or TRAIN_RATIO > 1:
         raise Exception("train ratio parameter out of bounds")
     
     print("Connecting to DB...", end="\r")
-    db = get_databases()
+    db = get_database()
     train = db["train"]
     validation = db["validation"]
-    
+    invalid_repos = db["invalid_repos"]
+    file_metadatas = db["file_metadata"]
     # Start new collections
     train.drop()
     validation.drop()
+    invalid_repos.drop()
+    file_metadatas.drop()
     
-    wanted_files = fetch_files(in_folder)
+    wanted_files = fetch_files(IN_FOLDER)
     parser = Parser()
     pbar = tqdm(wanted_files, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     
@@ -390,37 +452,49 @@ def parse_folder(in_folder : str,
     valid_char_counter = 0
 
     scaling_const = 100
-    variable_train_ratio = train_ratio * scaling_const
+    variable_train_ratio = TRAIN_RATIO * scaling_const
     
-    for file in pbar:
-        pbar.set_postfix_str("/".join(file.split("/")[len(in_folder.split("/")):]))
+    train_document_idx = 0
+    valid_document_idx = 0
+    
+    for file_obj in pbar:
+        
+        pbar.set_postfix_str(file_obj.get("root_path"))
 
         try:
-            parsed_objects = parser.process_file(file)
-            if len(parsed_objects) == 0:
+            kernels, file_metadata = parser.process_file(file_obj.get("full_path"))
+            if file_metadata is None:
                 continue
             
+            del file_obj["full_path"] 
+            file_metadata = {
+                **file_metadata,
+                **file_obj
+            }
             
-            for obj in parsed_objects:
+            insert_result = file_metadatas.insert_one(file_metadata)
+            
+            for kernel in kernels:
+                kernel["file_metadata_id"] = str(insert_result.inserted_id)
+                
                 is_train_data = random.random() * scaling_const < variable_train_ratio
-                if is_train_data or obj.get("has_generated_comment", False):
-                    variable_train_ratio -= (1-train_ratio)
+                if is_train_data or kernel.get("has_generated_comment", False):
+                    variable_train_ratio -= (1-TRAIN_RATIO)
                     train_data_counter += 1
-                    train_char_counter += len(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
-                    train.insert_one(obj)
-                    # out_file = os.path.join(out_folder, "{}_{}{}".format(train_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
+                    train_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
+                    kernel["index"] = train_document_idx
+                    train.insert_one(kernel)
+                    train_document_idx += 1
                 else:
-                    variable_train_ratio += train_ratio
+                    variable_train_ratio += TRAIN_RATIO
                     valid_data_counter += 1
-                    valid_char_counter += len(obj.get("comment", "") + obj.get("header", "") + obj.get("body", ""))
-                    # out_file = os.path.join(out_folder, "{}_{}{}".format(valid_files_counter, file.split("/")[-1], DATA_FILE_SUFFIX))
-                    validation.insert_one(obj)
+                    valid_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
+                    kernel["index"] = valid_document_idx
+                    validation.insert_one(kernel)
+                    valid_document_idx += 1
 
-            
-            # with open(out_file, "w") as fd:
-            #     json.dump(parsed_objects, fd, indent=2)
         except Exception as e:
-            skipped_files.append({"file" : file, "exception" : str(e)})    
+            invalid_repos.insert_one({"file" : file_obj.get("root_path"), "exception" : str(e)})
         
     print("Train data stats:")
     print("\tTotal data: %d" % train_data_counter)
@@ -437,30 +511,8 @@ def parse_folder(in_folder : str,
     print("Train ratio by char: {:.2%}".format(train_char_counter / (train_char_counter + valid_char_counter)))
 
 
-def clear_folders(train_folder, valid_folder):
-    [os.remove(os.path.join(train_folder, file)) for file in os.listdir(train_folder) if os.path.isfile(os.path.join(train_folder, file))]
-    [os.remove(os.path.join(valid_folder, file)) for file in os.listdir(valid_folder) if os.path.isfile(os.path.join(valid_folder, file))]
-    
-
 if __name__ == "__main__":
     
-    # parser = Parser()
-    # test_file = "data/raw/oneflow/stack_op.cpp"
-    # parsed_objs = parser.process_file(test_file)
-    # print(json.dumps(parsed_objs, indent=2))
-    # sys.exit(0)
-    
-    in_folder = "../raw"
-    train_folder = "../processed/train"
-    valid_folder = "../processed/valid"
-    train_ratio = 0.8
-    
-    # print("Cleaning folders...", end="\r")
-    # clear_folders(train_folder, valid_folder)
-    
-    parse_folder(in_folder, train_folder, valid_folder, train_ratio)
-    
-    with open("skipped_files.log", "w") as fd:
-        json.dump(skipped_files, fd, indent=2)
+    parse_folder()
     
     
