@@ -149,7 +149,7 @@ class Parser:
         include_re = r"^\s*#include\s*(<|\")\s*(\S+)\s*(\"|>)\s*$"
         define_re = r"^\s*#define\s+(\S+)\s+(.+)$"
         global_var_re = r"^(.+)(?:(\s+(\S+))\s*)\s*;\s*$"
-        global_var_with_val_re = r"^(.+)(?:(\s+(\S+))\s*=)(.+)\s*;\s*$"
+        global_var_with_val_re = r"^(\S.+)(?:(\s+(\S+))\s*=)(.+)\s*;\s*$"
         
         for i, line in enumerate(lines, 1):
             if (match := re.match(include_re, line)):
