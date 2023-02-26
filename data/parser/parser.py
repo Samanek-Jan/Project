@@ -15,13 +15,13 @@ from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE, PARSING_OBJECTS
 MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
 DATABASE_NAME = "cuda_snippets"
 
-GPU_FILE_SUFFIXES = set(["cu", "c", "hu"])
-HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu"])
+GPU_FILE_SUFFIXES = set(["cu", "hu", "cuh"])
+HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
 IN_FOLDER = "../raw"
-TRAIN_RATIO = 0.8
+TRAIN_RATIO = 0.75
 
 class Parser:
 
@@ -185,18 +185,9 @@ class Parser:
             #     })
         
         return includes, global_vars
-        
-    def __generate_default_comment(self, header : str) -> str:
-        
-        # Get kernel name
-        oneline_header = header.replace("\n", " ")
-        res = re.search(r"(^|.*\s+)(\S+)\s+(\S+)\s*\((.*)\).*", oneline_header)
-        
-        if res is None:
-            raise Exception("parser.__generate_default_comment: Error finding kernel name.")
-        
+    
+    def __split_name(self, name : str) -> List:
         # Split name to multiple words
-        name = res[3]
         words = []
         word = ""
         for c in name:
@@ -211,21 +202,48 @@ class Parser:
                 
         if word != "":
             words.append(word)
-            
+        
+        return words
+    
+    def __parse_header_params(self, params : str) -> Dict:
         # Get parameters
-        params = map(lambda x: x.strip(), res[4].split(","))
+        params = map(lambda x: x.strip(), params.split(","))
         params_dict = {}
         for param in params:
             param = param.split(" ")
             param_name = param[-1]
             params_dict[param_name] = "".join(param[:-1])
+        return params_dict
+    
+    def __generate_default_comment(self, header : str) -> str:
         
-        generated_comment = """
-// {}{} for {}
-{}
-{}
-        """.format(res[1] + " " if random.random() > 0.5 else "", random.choice(["Function", "Method", "Kernel"]), " ".join(words) , self.__params_to_str(params_dict), f"// returns {res[2]}" if random.random() > 0.5 else "")
+        # Get kernel name
+        oneline_header = header.replace("\n", " ")
+        non_templated_kernel_header = r"^\s*(__.+__)\s+(.+)\s+(\S+)\s*\((.*)\).*"
+        templated_kernel_header = r"^\s*template\s*<(.+)>\s*(__.+__)\s+(.+)\s+(\S+)\s*\((.*)\).*"
         
+        description_call_set = ["Function", "Method", "Kernel"]
+        description_template_call_set = ["Templated", "Generic"]
+        
+        res = re.search(non_templated_kernel_header, oneline_header)
+        if (res):
+            splitted_name = self.__split_name(res[3])
+            params_dict = self.__parse_header_params(res[4])
+            generated_comment = "// {} for {}\n".format(random.choice(description_call_set), " ".join(splitted_name))
+            return_type = res[2]
+        elif (res := re.search(templated_kernel_header, oneline_header)):
+            splitted_name = self.__split_name(res[4])
+            params_dict = self.__parse_header_params(res[5])
+            return_type = res[3]
+            generated_comment = "// {}{} for {}\n".format(random.choice(description_template_call_set) + " " if random.random() < 0.5 else "", random.choice(description_call_set), " ".join(splitted_name))
+            
+        else:
+            raise Exception(f"parser.__generate_default_comment: Error parsing header.\nHeader: {header}")
+        
+        generated_comment += self.__params_to_str(params_dict)
+        if random.random() < 0.5 and oneline_header.find("__global__") == -1:
+            generated_comment += f"\n// returns {return_type}"
+
         return generated_comment.strip() + "\n"
         
     def __params_to_str(self, params_dict, prefix="// "):
@@ -238,10 +256,9 @@ class Parser:
         
     
     def __get_cuda_headers(self, content : str) -> List:
-        # cuda_function_header_regex = r"^\s*(template<.+>)?\s*(__device__|__host__|__global__)+\s+\S+\s+\S+\(.*\)\s*$"
         cuda_prefix_function_regex = r"(__device__|__host__|__global__)+"
-        template_regex = r"^\s*template<.+>\s*$"
-        lines = content.split("\n")
+        template_regex = r"^\s*template\s*<.+>\s*$"
+        lines = content.splitlines()
         cuda_headers = []
         
         content_idx = 0
@@ -414,7 +431,6 @@ def fetch_files(in_folder : str, root_path = "", repo_name = None, root=True) ->
                 {
                     "full_path" : full_path,
                     "root_path" : os.path.join(root_path, file),
-                    "repo_name" : repo_name
                 }
             )
             
@@ -433,17 +449,15 @@ def parse_folder() -> None:
     db = get_database()
     train = db["train"]
     validation = db["validation"]
-    invalid_repos = db["invalid_repos"]
+    invalid_files = db["invalid_files"]
     file_metadatas = db["file_metadata"]
     # Start new collections
     train.drop()
     validation.drop()
-    invalid_repos.drop()
+    invalid_files.drop()
     file_metadatas.drop()
-    
-    wanted_files = fetch_files(IN_FOLDER)
+
     parser = Parser()
-    pbar = tqdm(wanted_files, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     
     train_data_counter = 0
     train_char_counter = 0
@@ -457,45 +471,60 @@ def parse_folder() -> None:
     train_document_idx = 0
     valid_document_idx = 0
     
-    for file_obj in pbar:
+    repos = os.listdir(IN_FOLDER)
+    repo_pbar = tqdm(repos, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', leave=True)
+    
+    for repo_name in repo_pbar:
+        repo_path = os.path.join(IN_FOLDER, repo_name)
+        if not os.path.isdir(repo_path):
+            continue
         
-        pbar.set_postfix_str(file_obj.get("root_path"))
+        repo_pbar.set_description(repo_name)
+        
+        wanted_files = fetch_files(repo_path)
+        pbar = tqdm(wanted_files, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', leave=False)
+        
+        for file_obj in pbar:
+            file_obj["root_path"] = os.path.join(repo_name, file_obj.get("root_path"))
+            pbar.set_description("Processing")
+            pbar.set_postfix_str(file_obj.get("root_path"))
 
-        try:
-            kernels, file_metadata = parser.process_file(file_obj.get("full_path"))
-            if file_metadata is None:
-                continue
-            
-            del file_obj["full_path"] 
-            file_metadata = {
-                **file_metadata,
-                **file_obj
-            }
-            
-            insert_result = file_metadatas.insert_one(file_metadata)
-            
-            for kernel in kernels:
-                kernel["file_metadata_id"] = str(insert_result.inserted_id)
+            try:
+                kernels, file_metadata = parser.process_file(file_obj.get("full_path"))
+                if file_metadata is None:
+                    continue
                 
-                is_train_data = random.random() * scaling_const < variable_train_ratio
-                if is_train_data or kernel.get("has_generated_comment", False):
-                    variable_train_ratio -= (1-TRAIN_RATIO)
-                    train_data_counter += 1
-                    train_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
-                    kernel["index"] = train_document_idx
-                    train.insert_one(kernel)
-                    train_document_idx += 1
-                else:
-                    variable_train_ratio += TRAIN_RATIO
-                    valid_data_counter += 1
-                    valid_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
-                    kernel["index"] = valid_document_idx
-                    validation.insert_one(kernel)
-                    valid_document_idx += 1
+                file_metadata["repo_name"] = repo_name
+                del file_obj["full_path"] 
+                file_metadata = {
+                    **file_metadata,
+                    **file_obj
+                }
+                
+                insert_result = file_metadatas.insert_one(file_metadata)
+                
+                for kernel in kernels:
+                    kernel["file_metadata_id"] = str(insert_result.inserted_id)
+                    
+                    is_train_data = random.random() * scaling_const < variable_train_ratio
+                    if is_train_data or kernel.get("has_generated_comment", False):
+                        variable_train_ratio -= (1-TRAIN_RATIO)
+                        train_data_counter += 1
+                        train_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
+                        kernel["index"] = train_document_idx
+                        train.insert_one(kernel)
+                        train_document_idx += 1
+                    else:
+                        variable_train_ratio += TRAIN_RATIO
+                        valid_data_counter += 1
+                        valid_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
+                        kernel["index"] = valid_document_idx
+                        validation.insert_one(kernel)
+                        valid_document_idx += 1
 
-        except Exception as e:
-            invalid_repos.insert_one({"file" : file_obj.get("root_path"), "exception" : str(e)})
-        
+            except Exception as e:
+                invalid_files.insert_one({"file" : file_obj.get("root_path"), "exception" : str(e)})
+            
     print("Train data stats:")
     print("\tTotal data: %d" % train_data_counter)
     print("\tTotal char. len: %d" % train_char_counter)          

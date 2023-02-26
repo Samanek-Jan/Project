@@ -1,5 +1,5 @@
 from ast import Dict
-from typing import Collection
+from typing import Collection, Tuple
 from pymongo import MongoClient
 import sys, os
 import subprocess
@@ -46,11 +46,11 @@ def compile(file_content):
     
 def analyze_error(error_output : str) -> Dict:
     error_lines = error_output.splitlines()
-    missing_token_re_list = [re.compile(r"indentifier \"(\S+)\" is undefined")]
-    wrong_val_re_list = [re.compile(r"value of type \"(.+)\" cannot be used to initialize an entity of type \"(.+)\"")]
-    syntax_error_re_list = [re.compile(r"expected a \"\S+\""), re.compile(r"unrecognized token"), re.compile(r"return value type does not match the function type")]
-    missing_type_re_list = [re.compile(r"explicit type is missing"), re.compile(r"type name is not allowed")]
-    inlude_error_re_list = [re.compile(r"(\S+): No such file or directory")]
+    missing_token_re_list = [r".*identifier \"(\S+)\" is undefined.*"]
+    wrong_val_re_list = [r".*value of type \"(.+)\" cannot be used to initialize an entity of type \"(.+)\".*"]
+    syntax_error_re_list = [r".*expected a \"\S+\"", r".*unrecognized token.*", r".*return value type does not match the function type.*"]
+    missing_type_re_list = [r".*explicit type is missing.*", r".*type name is not allowed.*"]
+    inlude_error_re_list = [r".* error: (\S+): No such file or directory.*"]
     
     error_analysis = {
         "missing_tokens" : [],
@@ -62,11 +62,11 @@ def analyze_error(error_output : str) -> Dict:
     
     for i, line in enumerate(error_lines, 1):
         for regex in missing_token_re_list:
-            if res := regex.match(line):
+            if res := re.match(regex, line):
                 error_analysis["missing_tokens"].append({
                     "line" : line,
-                    "idx" : i,
-                    "error_regex" : regex.pattern,
+                    "line_idx" : i,
+                    "error_regex" : regex,
                     "identifier" : res[1]
                 })
                 break
@@ -75,11 +75,11 @@ def analyze_error(error_output : str) -> Dict:
             continue
         
         for regex in wrong_val_re_list:
-            if res := regex.match(line):
+            if res := re.match(regex, line):
                 error_analysis["wrong_vals"].append({
                     "line" : line,
-                    "idx" : i,
-                    "error_regex" : regex.pattern,
+                    "line_idx" : i,
+                    "error_regex" : regex,
                     "given_type" : res[1],
                     "required_type" : res[2]
                 })
@@ -90,11 +90,11 @@ def analyze_error(error_output : str) -> Dict:
         
         
         for regex in syntax_error_re_list:
-            if res := regex.match(line):
+            if res := re.match(regex, line):
                 error_analysis["syntax_errors"].append({
                     "line" : line,
-                    "idx" : i,
-                    "error_regex" : regex.pattern,
+                    "line_idx" : i,
+                    "error_regex" : regex,
                 })
                 break
         
@@ -102,11 +102,11 @@ def analyze_error(error_output : str) -> Dict:
             continue
         
         for regex in missing_type_re_list:
-            if res := regex.match(line):
+            if res := re.match(regex, line):
                 error_analysis["missing_types"].append({
                     "line" : line,
-                    "idx" : i,
-                    "error_regex" : regex.pattern,
+                    "line_idx" : i,
+                    "error_regex" : regex,
                 })
                 break
         
@@ -114,18 +114,18 @@ def analyze_error(error_output : str) -> Dict:
             continue
         
         for regex in inlude_error_re_list:
-            if res := regex.match(line):
+            if res := re.match(regex, line):
                 error_analysis["include_errors"].append({
                     "line" : line,
-                    "idx" : i,
-                    "error_regex" : regex.pattern,
+                    "line_idx" : i,
+                    "error_regex" : regex,
                     "file" : res[1]
                 })
                 break
     
     return error_analysis
 
-def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection) -> str:
+def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection):
     # error_analysis = {
     #     "missing_tokens" : [],
     #     "wrong_vals" : [],
@@ -134,11 +134,11 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection
     #     "include_errors" : []
     # }
     
-    if error_analysis["syntax_errors"] is not []:
-        return None
+    if error_analysis["syntax_errors"]:
+        return None, False
     
-    if error_analysis["include_errors"] is not []:
-        return None
+    if error_analysis["include_errors"]:
+        return None, False
     
     if error_analysis["missing_tokens"]:
         missing_tokens_obj_list = error_analysis["missing_tokens"]
@@ -146,60 +146,58 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection
             token_name = token_obj["identifier"]
             return find_missing_token(token_name, file_metadata, db_collection)
         
-    return None
+    return None, False
             
     
 
 def find_missing_token(token_name, metadata, files_metadata):
-    additional_content, _ = search_file_for_token(metadata["repo_name"], metadata["filename"], token_name, files_metadata)
-    return additional_content
+    return search_file_for_token(metadata["repo_name"], metadata["filename"], token_name, files_metadata)
     
     
 def search_file_for_token(repo_name : str, file_name : str, token_name : str, files_metadata):
     file_name = file_name.split("/")[-1]
-    matching_headers = files_metadata.findMany({"repo_name" : repo_name, "filename" : file_name})
+    matching_headers = list(files_metadata.find({"repo_name" : repo_name, "filename" : file_name}))
     
     for header in matching_headers:
         for global_var_obj in header["global_vars"]:
             if global_var_obj["name"] == token_name:
                 return global_var_obj["full_line"], True
     
-    libraries = ""
+    libraries = set()
     for header in matching_headers:
-        custom_libraries = [include["full_line"].strip() for include in header["includes"] if include["is_custom_include"]]
-        for custom_library in custom_libraries:
-            library_proposal, found = search_file_for_token(repo_name, custom_library["include_name"], token_name, files_metadata)
+        library_names = [include["full_line"].strip() for include in header["includes"] if include["is_custom_include"]]
+        for library_name in library_names:
+            library_proposal, found = search_file_for_token(repo_name, library_name, token_name, files_metadata)
             if found:
                 return library_proposal
-            else:
-                libraries += "\n" + library_proposal
+            elif library_proposal is not None:
+                libraries.update(library_proposal)
         
-        third_party_libraries = "\n".join([include["full_line"].strip() for include in header["includes"] if not include["is_custom_include"]])
-        libraries += "\n" + third_party_libraries
+        third_party_libraries = [include["full_line"].strip() for include in header["includes"] if not include["is_custom_include"]]
+        libraries.update(set(third_party_libraries))
     
-    libraries_str = "\n".join(set([libraries.splitlines()]))
-    if libraries_str.strip() == "":
+    libraries = set(libraries)
+    if len(libraries) == 0:
         return None, False
     
-    return libraries_str, False
+    return libraries, False
         
         
 def validate_kernel(kernel : Dict, files_metadata) -> Dict:
 
     kernel_str = "\n{}{}\n".format(kernel["header"], kernel["body"])
     additional_content = """
-int main() \{
+int main() {
     return 0;
-\}"""
+}"""
 
     kernel_validation = {
         "iterations" : [],
-        "max_tries" : MAX_COMPILE_TRIES,
-        "retval" : None,
-        "error" : None,
-        "additional_content" : None,
-        "compiled" : None
+        "max_iterations" : MAX_COMPILE_TRIES,
+        "compiled" : None,
     }
+    
+    used_libraries = set("cuda/helper_cuda.h")
     
     metadata : Dict = files_metadata.find_one({"_id" : ObjectId(kernel["file_metadata_id"])})
     if not metadata:
@@ -220,96 +218,87 @@ int main() \{
         kernel_validation_iteration["stdout"] = stdout
         kernel_validation_iteration["retval"] = retval
         kernel_validation_iteration["additional_content"] = additional_content
-
+        
+        error_analyses = analyze_error(stderr)
+        kernel_validation_iteration["error_analyses"] = error_analyses
+        
         kernel_validation["iterations"].append(kernel_validation_iteration)
         
         if retval == 0:
-            kernel_validation["retval"] = retval
-            kernel_validation["stderr"] = stderr
-            kernel_validation["additional_content"] = additional_content
             kernel_validation["compiled"] = True
             break
         
-        error_analyses = analyze_error(stderr)
-        new_additional_content = apply_error_patch(error_analyses, metadata, files_metadata)
-        if new_additional_content is None:
-            # Unknown error
-            kernel_validation["retval"] = retval
-            kernel_validation["stdout"] = stdout
-            kernel_validation["stderr"] = stderr
-            kernel_validation["additional_content"] = additional_content
+        new_additional_content, found = apply_error_patch(error_analyses, metadata, files_metadata)
+        if not found and new_additional_content is not None:
+            new_additional_content = new_additional_content.difference(used_libraries)
+            if len(new_additional_content) == 0:
+                kernel_validation["compiled"] = False
+                break
+            used_libraries.update(new_additional_content)
+            new_additional_content = "\n".join(new_additional_content)
+        elif new_additional_content is None:
             kernel_validation["compiled"] = False
             break
-        
+            
         additional_content = new_additional_content + "\n" + additional_content
         
     return kernel_validation
             
-            
+def get_nvcc_version():
+    completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if completedProcess.returncode != 0:
+        raise SystemError(f"Could not get NVCC info.\Retval: {completedProcess.returncode}\n Stderr: {completedProcess.stderr}\n")
+
+    return completedProcess.stdout.decode("utf-8")
     
 
 def validate_db():
     db = MongoClient("mongodb://localhost:27017")["cuda_snippets"]
     train = db["train"]
-    validate = db["validate"]
+    validate = db["validation"]
     file_metadatas = db["file_metadata"]
-    error_dict = {}
+    
+    nvcc_info = get_nvcc_version()
+    compiled = 0
+    not_compiled = 0
     
     print("Validating train part")
     for kernel in tqdm(tuple(train.find())):
         validation_result = validate_kernel(kernel, file_metadatas)
-        kernel["validation_result"] = validation_result
-        train.update_one({"_id" : kernel["_id"]}, kernel)
+        validation_result["nvcc_info"] = nvcc_info
+        if validation_result["compiled"]:
+            compiled += 1
+        else:
+            not_compiled += 1
+        
+        new_vals = {
+            "$set" : {"validation" : validation_result}
+        }
+        train.update_one({"_id" : kernel["_id"]}, new_vals)
+    
+    print(f"Compiled successfully: {compiled}")
+    print(f"Compilation failed   : {not_compiled}")
+    
+    compiled = 0
+    not_compiled = 0
     
     print("Validating validate part")
     for kernel in tqdm(tuple(validate.find())):
         validation_result = validate_kernel(kernel, file_metadatas)
-        kernel["validation_result"] = validation_result
-        validate.update_one({"_id" : kernel["_id"]}, kernel)
-            
-    return error_dict
-        
-        
-def validate_files(in_folder):
-    train = os.path.join(in_folder, "train")
-    validate = os.path.join(in_folder, "valid")
-    error_dict = {}
+        validation_result["nvcc_info"] = nvcc_info
+        if validation_result["compiled"]:
+            compiled += 1
+        else:
+            not_compiled += 1
+        new_vals = {
+            "$set" : {"validation" : validation_result}
+        }
+        validate.update_one({"_id" : kernel["_id"]}, new_vals)
     
-    train_files = os.listdir(train)
-    validate_files = os.listdir(validate)
+    print(f"Compiled successfully: {compiled}")
+    print(f"Compilation failed   : {not_compiled}")
     
-    for file in tqdm(train_files):
-        full_path = os.path.join(train, file)
-        with open(full_path, "r") as fd:
-            cuda_snippets = json.load(fd)
         
-        for cuda_snippet in cuda_snippets:
-            retval, stdout, stderr = compile("{}\n{}\n".format(cuda_snippet["header"], cuda_snippet["body"]))
-            if retval != 0:
-                error_dict[file] = {
-                    "part" : "validate",
-                    "retval": retval,
-                    "cause": stderr,
-                    "stdout": stdout
-                }
-
-    for file in tqdm(validate_files):
-        full_path = os.path.join(train, file)
-        with open(full_path, "r") as fd:
-            cuda_snippets = json.load(fd)
-        
-        for cuda_snippet in cuda_snippets:
-            retval, stdout, stderr = compile("{}\n{}\n".format(cuda_snippet["header"], cuda_snippet["body"]))
-            if retval != 0:
-                error_dict[file] = {
-                    "part" : "train",
-                    "retval": retval,
-                    "cause": stderr,
-                    "stdout": stdout
-                }
-                
-    return error_dict
-
 if __name__ == "__main__":
     validate_db()
 
