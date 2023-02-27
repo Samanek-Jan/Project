@@ -1,0 +1,29 @@
+import torch
+import random
+from pymongo import MongoClient
+
+
+RANDOM_SEED = 123456
+random.seed(RANDOM_SEED)
+CUDA_BOS_TOKEN = "[BOSCUDA]"
+CPP_BOS_TOKEN = "[BOSCPP]"
+EOS_TOKEN = "[EOS]"
+UNK_TOKEN = "[UNK]"
+PAD_TOKEN = "[PAD]"
+NEWLINE_TOKEN = "\n"
+SPACE_TOKEN = " "
+MASK_TOKEN = "[MSK]"
+SPECIAL_TOKENS = [CUDA_BOS_TOKEN, CPP_BOS_TOKEN, EOS_TOKEN, UNK_TOKEN, PAD_TOKEN, SPACE_TOKEN, NEWLINE_TOKEN, MASK_TOKEN]
+NEWLINE_TOKEN_TRANSLATION = "\u0394" # Delta
+SPACE_TOKEN_TRANSLATION = "\u03C3" # Sigma
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+LOWERCASE = False
+SUBWORD_PREFIX = '$$'
+
+SAMPLING_TYPES = {
+    "NSP" : "NSP",
+    "MLM" : "MLM",
+}
+
+MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
+mongoDB = MongoClient(MONGODB_CONNECTION_STRING)

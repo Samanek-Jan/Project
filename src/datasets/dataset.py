@@ -7,14 +7,14 @@ import random
 from tqdm import tqdm
 from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, DEVICE
 
-from src.datasets.data_sampler import DataSampler
+from src.datasets.loca_data_sampler import LocalDataSampler
+from src.datasets.remote_data_sampler import RemoteDataSampler
 from src.datasets.dataset_errors import EmptyDatasetError, WrongParameterError
 
 
 class Dataset(torch.utils.data.Dataset):
     
     def __init__(self, 
-                 in_folder : str,
                  epoch_len : int, 
                  samples_per_obj : int,
                  shuffle : bool = True, 

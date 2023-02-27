@@ -5,12 +5,11 @@ import numpy as np
 from tokenizers import Tokenizer
 import tokenizers
 
-from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, NEW_LINE_TOKEN, RANDOM_SEED
-from src.datasets.dataset_errors import WrongParameterError
+from src.datasets.interface.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, RANDOM_SEED
 from src.datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
-random.seed(RANDOM_SEED)
+
 
 def flatten_object_list(parsed_objects : List):
     flatten_list = []
@@ -21,13 +20,11 @@ def flatten_object_list(parsed_objects : List):
     
     return flatten_list
 
-class DataSampler:
+class DataSamplerInterface:
     
     def __init__(self, 
                  tokenizer_path : str, 
-                 min_x : int, 
                  max_x : int, 
-                 min_y : int, 
                  max_y : int, 
                  **kwargs):
         
@@ -35,18 +32,13 @@ class DataSampler:
             raise WrongParameterError(f"tokenizer_path \"{tokenizer_path}\" is not a file")
         elif min_x < 1 or max_x < min_x or min_y < 1 or max_y < min_y:
             raise WrongParameterError("""Size parameters are invalid.
-                                      min_x = {}
                                       max_x = {}
-                                      min_y = {}
-                                      max_y = {}""".format(min_x, max_x, min_y, max_y))
+                                      max_y = {}""".format(max_x, max_y))
         
         self.tokenizer : Tokenizer = Tokenizer.from_file(tokenizer_path)
         self.tokenizer.model.dropout = 0 if "bpe_dropout" not in kwargs else kwargs["bpe_dropout"]
-        self.new_line_id = self.tokenizer.token_to_id("\n") 
         
-        self.min_x = min_x
         self.max_x = max_x
-        self.min_y = min_y
         self.max_y = max_y
         
         # Check if first data from given object 
