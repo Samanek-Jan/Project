@@ -66,7 +66,7 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name)
+    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder)
     print("Done")
 
 
@@ -75,6 +75,7 @@ def train_and_test(model,
                    test_dataloader,
                    epoch_n,
                    model_name,
+                   output_folder,
                    eval_every_n = 1):
     
     best_version = {"BLEU" : float("-inf")}
@@ -131,7 +132,7 @@ def train_and_test(model,
                     "pred_sentences" : pred_sentences,
                 }
                     
-                full_path = os.path.join(MODELS_OUT_FOLDER, f"{model_name}.pt")
+                full_path = os.path.join(output_folder, f"{model_name}.pt")
                 torch.save(best_version, full_path) 
         
         # print(f"Training bleu score = {score_val:.3f}")
