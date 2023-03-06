@@ -4,16 +4,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.datasets.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
+from src.datasets.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 
-from model.baseline.config import DEVICE, MAX_Y
-from model.baseline.models import Model
+from src.model.baseline.config import DEVICE
+from src.model.baseline.models import Model
 
-def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List[str] = [CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, PAD_TOKEN]):
+def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List[str] = [BOS_TOKEN, EOS_TOKEN, PAD_TOKEN]):
     
     exclude_tokens_set = set()
     for token in exclude_tokens:
-        exclude_tokens_set.add(tokenizer.token_to_id(token))
+        exclude_tokens_set.add(tokenizer.convert_tokens_to_ids(token))
         
     clean_batch = []
     for sentence in batch:
@@ -28,21 +28,20 @@ def clear_sentences(tokenizer : Tokenizer, batch : List, exclude_tokens : List[s
         
         
 class GreedySearch:
-    def __init__(self, model : Model, tokenizer : Tokenizer, max_length : int = MAX_Y):
+    def __init__(self, model : Model, tokenizer : Tokenizer, max_length : int):
         self.model = model
         self.tokenizer = tokenizer
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id(CUDA_BOS_TOKEN)
-        self.bos_cpp_id = tokenizer.token_to_id(CPP_BOS_TOKEN)
-        self.eos_id = tokenizer.token_to_id(EOS_TOKEN)
-        self.pad_id = tokenizer.token_to_id(PAD_TOKEN)
+        self.bos_id = tokenizer.convert_tokens_to_ids(BOS_TOKEN)
+        self.eos_id = tokenizer.convert_tokens_to_ids(EOS_TOKEN)
+        self.pad_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
 
     @torch.no_grad()
     def __call__(self, source, source_mask, cuda_mask):
         source_encoding = self.model.encode_source(source, source_mask).to(DEVICE)
         
-        target = torch.where(cuda_mask == True, self.bos_cuda_id, self.bos_cpp_id).unsqueeze(-1).to(DEVICE)
+        target = torch.where(cuda_mask == True, self.bos_id, 0).unsqueeze(-1).to(DEVICE)
         # target = torch.full([source_encoding.size(0), 1], fill_value=self.sos_id).to(DEVICE)
         stop = torch.zeros(target.size(0), dtype=torch.bool, device=target.device)
 
@@ -63,15 +62,14 @@ class GreedySearch:
 
 
 class BeamSearch:
-    def __init__(self, model, tokenizer : Tokenizer, beam_size : int = 4, max_length : int = MAX_Y):
+    def __init__(self, model, tokenizer : Tokenizer, max_length : int, beam_size : int = 4):
         self.model = model
         self.tokenizer = tokenizer
         self.beam_size = beam_size
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id(CUDA_BOS_TOKEN)
-        self.bos_cpp_id = tokenizer.token_to_id(CPP_BOS_TOKEN)
-        self.eos_id = tokenizer.token_to_id(EOS_TOKEN)
+        self.bos_id = tokenizer.convert_tokens_to_ids(BOS_TOKEN)
+        self.eos_id = tokenizer.convert_tokens_to_ids(EOS_TOKEN)
         self.vocab_size = tokenizer.get_vocab_size()
 
     @torch.no_grad()
@@ -82,7 +80,7 @@ class BeamSearch:
         candidates = [[] for _ in range(batch_size)]
 
         # target = torch.full([batch_size, 1], fill_value=self.sos_id, device=source.device)
-        target = torch.where(cuda_mask == True, self.bos_cuda_id, self.bos_cpp_id).unsqueeze(-1).to(DEVICE)
+        target = torch.where(cuda_mask == True, self.bos_id, 0).unsqueeze(-1).to(DEVICE)
         prediction = self.model.decode_step(source_encoding, source_mask, target).squeeze(0)
         prediction = F.log_softmax(prediction, dim=-1)
         prediction = torch.topk(prediction, self.beam_size, dim=-1)  # shape: [batch, beam]

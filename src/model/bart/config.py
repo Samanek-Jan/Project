@@ -6,8 +6,8 @@ SEED = 123456
 random.seed(SEED)
 
 # DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-LR = 1e-4
+LR = 5e-5
 WARMUP_DURATION = 500
-BATCH_SIZE = 32
+BATCH_SIZE = 4
 
-MODELS_OUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../models/baseline")
+MODELS_OUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../models/bart")

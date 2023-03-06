@@ -10,10 +10,10 @@ from tokenizers.decoders import WordPiece
 from tokenizers import pre_tokenizers, Regex, normalizers
 from tqdm import tqdm
 
-from src.datasets.interface.config import NEWLINE_TOKEN_TRANSLATION, SPACE_TOKEN_TRANSLATION, SPECIAL_TOKENS, SUBWORD_PREFIX, LOWERCASE, NEWLINE_TOKEN, SPACE_TOKEN, UNK_TOKEN
-from src.datasets.interface.config import mongoDB
+from src.datasets.config import NEWLINE_TOKEN_TRANSLATION, SPACE_TOKEN_TRANSLATION, SPECIAL_TOKENS, SUBWORD_PREFIX, LOWERCASE, NEWLINE_TOKEN, SPACE_TOKEN, UNK_TOKEN
+from src.datasets.config import mongoDB
 
-class CupydTokenizer(Tokenizer):
+class CupydTokenizer:
     
     def __init__(self, tokenizer_path : str = None, special_translations : dict = {NEWLINE_TOKEN : NEWLINE_TOKEN_TRANSLATION, SPACE_TOKEN : SPACE_TOKEN_TRANSLATION}):
         
@@ -45,7 +45,7 @@ class CupydTokenizer(Tokenizer):
         return map(lambda sentence : self.decode(sentence), sentences)
     
     def token_to_id(self, token):
-        return self.tokenizer.token_to_id(token)
+        return self.tokenizer.convert_tokens_to_ids(token)
 
 def define_tokenizer(vocab_size: int):
     model = BPE(unk_token=UNK_TOKEN, continuing_subword_prefix=SUBWORD_PREFIX)

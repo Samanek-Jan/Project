@@ -5,7 +5,7 @@ import numpy as np
 from tokenizers import Tokenizer
 import tokenizers
 
-from src.datasets.interface.config import CPP_BOS_TOKEN, CUDA_BOS_TOKEN, EOS_TOKEN, RANDOM_SEED
+from src.datasets.config import BOS_TOKEN, EOS_TOKEN, RANDOM_SEED
 from src.datasets.tokenizer import SUBWORD_PREFIX
 
 # Init of random module
@@ -29,9 +29,9 @@ class DataSamplerInterface:
                  **kwargs):
         
         if not os.path.isfile(tokenizer_path):
-            raise WrongParameterError(f"tokenizer_path \"{tokenizer_path}\" is not a file")
-        elif min_x < 1 or max_x < min_x or min_y < 1 or max_y < min_y:
-            raise WrongParameterError("""Size parameters are invalid.
+            raise Exception(f"tokenizer_path \"{tokenizer_path}\" is not a file")
+        elif max_x < 1 or max_y < 1:
+            raise Exception("""Size parameters are invalid.
                                       max_x = {}
                                       max_y = {}""".format(max_x, max_y))
         
@@ -131,7 +131,7 @@ class DataSamplerInterface:
         
         x_str = self.tokenizer.decode(x_ids, skip_special_tokens=False)
         y_str = self.tokenizer.decode(y_ids, skip_special_tokens=False)
-        BOS_ID = self.tokenizer.token_to_id(CUDA_BOS_TOKEN if obj.get("is_gpu", False) else CPP_BOS_TOKEN)
+        BOS_ID = self.tokenizer.token_to_id(BOS_TOKEN if obj.get("is_gpu", False) else CPP_BOS_TOKEN)
         EOS_ID = self.tokenizer.token_to_id(EOS_TOKEN)
         y_ids.insert(0, BOS_ID)
         y_ids.append(EOS_ID)

@@ -31,7 +31,7 @@ class TestDataset(torch.utils.data.Dataset):
         return self.tokenizer.decode_batch(batch, *args, **kwargs)
     
     def get_token_id(self, token : str) -> int:
-        return self.tokenizer.token_to_id(token)
+        return self.tokenizer.convert_tokens_to_ids(token)
  
 
 class CollateFunctor:
@@ -90,7 +90,7 @@ def main():
         input_sentences = json.load(fd)
         
     tokenizer : Tokenizer = Tokenizer.from_file(args.tokenizer)
-    PAD_ID = tokenizer.token_to_id(PAD_TOKEN)
+    PAD_ID = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
     d = torch.load(args.model, map_location=DEVICE)
     embedd_dim = d["transformer_kwargs"]["embedd_dim"]
     del d["transformer_kwargs"]["embedd_dim"]

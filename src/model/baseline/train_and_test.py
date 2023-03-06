@@ -9,9 +9,9 @@ import argparse
 import transformers
 import json
 
-from src.datasets.config import CUDA_BOS_TOKEN, PAD_TOKEN
-from src.datasets.dataset import CollateFunctor, Dataset
-from model.baseline.config import BATCH_SIZE, DEVICE, LR, MAX_X, MAX_Y, MIN_X, MIN_Y, MODELS_OUT_FOLDER, WARMUP_DURATION
+from src.datasets.config import BOS_TOKEN, PAD_TOKEN
+from src.datasets.local_dataset.local_dataset import CollateFunctor, Dataset
+from model.baseline.config import BATCH_SIZE, DEVICE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
 from model.baseline.linear_lr import LinearLR
 from model.baseline.models import Model
 from model.baseline.search import GreedySearch
@@ -188,8 +188,8 @@ def evaluate(model, test_dataloader, search_class=GreedySearch, pbar : bool=True
     for i, ((sources, sources_mask), (y_ids, _), (sources_str, targets_str)) in enumerate(test_dataloader):
         
         y_bos = y_ids[:,0]
-        cuda_bos = tokenizer.token_to_id(CUDA_BOS_TOKEN)
-        cuda_mask = torch.where(y_bos == cuda_bos, True, False)
+        bos = tokenizer.convert_tokens_to_ids(BOS_TOKEN)
+        cuda_mask = torch.where(y_bos == bos, True, False)
         predictions_str = searcher(sources, sources_mask, cuda_mask)
         # bleu_score.update(predictions_str, targets_str)
         
