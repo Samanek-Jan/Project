@@ -22,7 +22,7 @@ class LocalDataset(torch.utils.data.Dataset):
         self.db.create_index("validation.compiled")
             
         self.len = self.db.count_documents({})
-        self.max_epoch_size = max_epoch_size if max_epoch_size is None else self.len
+        self.max_epoch_size = max_epoch_size if max_epoch_size is not None else self.len
         self.indecies = list(range(self.__len__()))
         self.buffer = []
         if shuffle:
