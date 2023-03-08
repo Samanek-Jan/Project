@@ -1,4 +1,5 @@
 import random
+from typing import Union
 import tokenizers
 import torch
 from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
@@ -8,7 +9,7 @@ from src.datasets.tokenizer import CupydTokenizer
 
 class LocalDataset(torch.utils.data.Dataset):
     
-    def __init__(self, tokenizer : CupydTokenizer, max_x : int, max_y : int, part : str, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
+    def __init__(self, tokenizer, max_x : int, max_y : int, part : str, max_epoch_size : Union(int, None) = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
         
         self.datasampler = LocalDataSampler(tokenizer, max_x, max_y, sampling_type)
         self.buffer_size = buffer_size
@@ -22,6 +23,7 @@ class LocalDataset(torch.utils.data.Dataset):
         self.db.create_index("validation.compiled")
             
         self.len = self.db.count_documents({})
+        self.max_epoch_size = max_epoch_size if max_epoch_size is None else self.len
         self.indecies = list(range(self.__len__()))
         self.buffer = []
         if shuffle:
@@ -43,7 +45,7 @@ class LocalDataset(torch.utils.data.Dataset):
         self.buffer.extend(self.db.find({"index" : {"$in" : append_indices}}))
     
     def __len__(self):
-        return self.len
+        return min(self.len, self.max_epoch_size)
     
     def __getitem__(self, i):
         if len(self.buffer) == 0:
