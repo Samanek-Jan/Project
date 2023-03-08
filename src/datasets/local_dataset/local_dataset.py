@@ -1,5 +1,4 @@
 import random
-from typing import Union
 import tokenizers
 import torch
 from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
@@ -9,7 +8,7 @@ from src.datasets.tokenizer import CupydTokenizer
 
 class LocalDataset(torch.utils.data.Dataset):
     
-    def __init__(self, tokenizer, max_x : int, max_y : int, part : str, max_epoch_size : Union(int, None) = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
+    def __init__(self, tokenizer, max_x : int, max_y : int, part : str, max_epoch_size : int = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
         
         self.datasampler = LocalDataSampler(tokenizer, max_x, max_y, sampling_type)
         self.buffer_size = buffer_size

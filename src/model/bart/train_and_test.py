@@ -19,10 +19,10 @@ from src.datasets.local_dataset.local_dataset import LocalDataset
 
 def main():
     print(f"Using {DEVICE}")
-    
+    pretraining = True
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
-    argument_parser.add_argument("--pretraining", "-p", type=bool, default=False)
+    argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
     argument_parser.add_argument("--model_name", "-m", type=str, default="t5-small")
     argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="t5-small")
@@ -42,7 +42,7 @@ def main():
     
     collate_f = CollateFunctor(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE)
     
-    if args.pretraining:
+    if pretraining:
         train_dataset = RemoteDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, args.epoch_size)
         valid_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "valid")
     else:
