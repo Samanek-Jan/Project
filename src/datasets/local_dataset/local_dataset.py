@@ -8,25 +8,47 @@ from src.datasets.tokenizer import CupydTokenizer
 
 class LocalDataset(torch.utils.data.Dataset):
     
-    def __init__(self, tokenizer : CupydTokenizer, max_x : int, max_y : int, part : str, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 1000):
+    def __init__(self, tokenizer : CupydTokenizer, max_x : int, max_y : int, part : str, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
         
         self.datasampler = LocalDataSampler(tokenizer, max_x, max_y, sampling_type)
         self.buffer_size = buffer_size
+        self.shuffle = shuffle
         if part == "train":
             self.db = mongoDB["cuda_snippets"]["train"]
         else:
             self.db = mongoDB["cuda_snippets"]["validation"]
+        
+        self.db.create_index("index")
+        self.db.create_index("validation.compiled")
             
         self.len = self.db.count_documents({})
+        self.indecies = list(range(self.__len__()))
+        self.buffer = []
+        if shuffle:
+            random.shuffle(self.indecies)
+        self.cache()
+    
+    def cache(self):
+        append_size = self.buffer_size - len(self.buffer)
+        append_indices = None
+        if len(self.indecies) < append_size:
+            append_indices = self.indecies
+            self.indecies = list(range(self.__len__()))
+            if self.shuffle:
+                random.shuffle(self.indecies)
+            append_indices.extend(self.indecies[:min(self.buffer_size-len(append_indices), len(self.indecies))])
+        else:
+            append_indices = self.indecies[:min(append_size, len(self.indecies))]
         
+        self.buffer.extend(self.db.find({"index" : {"$in" : append_indices}}))
+    
     def __len__(self):
         return self.len
     
     def __getitem__(self, i):
-        kernel = self.db.find_one({"index" : i})
-        if kernel is None:
-            raise KeyError("LocalDataset.__iter__: Invalid index")
-
+        if len(self.buffer) == 0:
+            self.cache()
+        kernel = self.buffer[i%len(self.buffer)]
         return self.datasampler(kernel)
     
     def __next__(self):

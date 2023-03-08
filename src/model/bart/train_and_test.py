@@ -29,27 +29,16 @@ def main():
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     args = argument_parser.parse_args()
     
-    
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, model_max_length=512)
-    # tokenizer.add_special_tokens({
-    # "bos_token": BOS_TOKEN,
-    # "pad_token": PAD_TOKEN,
-    # "mask_token": MASK_TOKEN,
-    # "eos_token": EOS_TOKEN,
-    # })
-    
     # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
-    # configuration.bos_token_id = tokenizer.convert_tokens_to_ids(tokenizer._bos_token)
-    # configuration.eos_token_id = tokenizer.convert_tokens_to_ids(tokenizer._eos_token)
-    # configuration.pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer._pad_token)
-
+    global MAX_SEQUENCE_SIZE
+    MAX_SEQUENCE_SIZE = configuration.n_positions
+    
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, model_max_length=MAX_SEQUENCE_SIZE)
+    
     # Initializing a model from the configuration
     model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
     model.resize_token_embeddings(len(tokenizer))
-    
-    global MAX_SEQUENCE_SIZE
-    MAX_SEQUENCE_SIZE = configuration.n_positions
     
     collate_f = CollateFunctor(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE)
     
