@@ -22,7 +22,7 @@ def main():
     
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
-    argument_parser.add_argument("--pretraining", "-p", type=bool, default=True)
+    argument_parser.add_argument("--pretraining", "-p", type=bool, default=False)
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
     argument_parser.add_argument("--model_name", "-m", type=str, default="t5-small")
     argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="t5-small")
@@ -101,7 +101,6 @@ def train_and_test(model,
             optimizer.step()
             
         scheduler.step()
-        score_val = bleu_score.compute()
         bleu_score.reset()
                 
         if epoch % eval_every_n == 0:
@@ -157,7 +156,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
 
     bleu_score = torchmetrics.BLEUScore()
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
-        generated_ids = model.generate(x["input_ids"], num_beams=2, min_length=0, max_length=MAX_SEQUENCE_SIZE)
+        generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
         
         sources_list.extend(x_str)
