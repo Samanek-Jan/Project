@@ -12,7 +12,7 @@ from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 from src.datasets.collate_functor import CollateFunctor
 from src.datasets.config import BOS_TOKEN, DEVICE, EOS_TOKEN, MASK_TOKEN, MAX_SEQUENCE_SIZE, PAD_TOKEN
 
-from src.model.bart.config import BATCH_SIZE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
+from src.model.t5_small.config import BATCH_SIZE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
 from src.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.datasets.local_dataset.local_dataset import LocalDataset
 
@@ -27,6 +27,7 @@ def main():
     argument_parser.add_argument("--model_name", "-m", type=str, default="t5-small")
     argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="t5-small")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
+    argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
     
     # Initializing a GPT configuration
@@ -37,8 +38,11 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, model_max_length=MAX_SEQUENCE_SIZE)
     
     # Initializing a model from the configuration
-    model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
-    model.resize_token_embeddings(len(tokenizer))
+    if args.model is not None:
+        model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
+    else:
+        model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
+        model.resize_token_embeddings(len(tokenizer))
     
     collate_f = CollateFunctor(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE)
     
