@@ -169,8 +169,9 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict):
     if tokens_content == "":
         third_party_libs, _ = get_third_party_libraries(file_metadata)
         tokens_content = "\n".join(third_party_libs)
-    
-    return tokens_content if tokens_content != "" else None, False
+        return tokens_content if tokens_content != "" else None, False
+    else:
+        return tokens_content, True
             
 
 def search_custom_library_for_token(token_name : str, custom_library_metadata : dict, searched_libs : set = set()):
@@ -292,12 +293,14 @@ def search_db(token_name : str, repo_name : str):
     # Search in train part
     proposal = train_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
     if proposal != None:
-        return proposal
+        return "{}\n{}".format(proposal["header"], proposal["body"])
     
     # Search in validation part
-    return validation_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+    proposal = validation_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+    if proposal != None:
+        return "{}\n{}".format(proposal["header"], proposal["body"])
 
-
+    return None
              
 def validate_kernel(kernel : Dict) -> Dict:
 
