@@ -171,7 +171,8 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict):
         tokens_content = "\n".join(third_party_libs)
         return tokens_content if tokens_content != "" else None, False
     else:
-        return tokens_content, True
+        remove_namespaces = Parser().remove_namespaces
+        return remove_namespaces(tokens_content), True
             
 
 def search_custom_library_for_token(token_name : str, custom_library_metadata : dict, searched_libs : set = set()):

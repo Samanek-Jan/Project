@@ -93,7 +93,21 @@ class Parser:
         with open(filename, 'r', encoding='latin-1') as fd:
             content = fd.read()
             return self.__process_str(content, os.path.split(filename)[1])
-        
+    
+    def remove_namespaces(self, content : str, exceptions=["std"]):
+        lines = content.splitlines(keepends=True)
+        clean_content = ""
+        for line in lines:
+            matches = re.findall("((\S+)::)", line)
+            for match in matches:
+                if match[1] in exceptions:
+                    continue
+                else:
+                    line = line.replace(match[0], "")
+
+            clean_content += line
+
+        return clean_content    
     
     def __process_str(self, content : str, filename : str) -> List:
         
@@ -115,9 +129,9 @@ class Parser:
                 continue
             
             kernels.append({
-                "comment"               : comment,
-                "header"                : cuda_header["header"],
-                "body"                  : body,
+                "comment"               : self.remove_namespaces(comment),
+                "header"                : self.remove_namespaces(cuda_header["header"]),
+                "body"                  : self.remove_namespaces(body),
                 "kernel_name"           : cuda_header["kernel_name"],
                 "type"                  : "function",
                 "is_from_cuda_file"     : self.is_current_file_gpu,
