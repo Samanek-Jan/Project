@@ -154,31 +154,31 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     sentences_target = []
     sentences_pred = []
     tokenizer : Tokenizer = test_dataloader.dataset.datasampler.tokenizer
-    bleu_score_metric = torchmetrics.BLEUScore()
 
     test_dataloader = tqdm(test_dataloader, leave=False)
 
     bleu_score = torchmetrics.BLEUScore()
+    rouge_score = torchmetrics.text.rouge.ROUGEScore()
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
         
+        rouge_score.update(y_pred, y_str)
+        y_str = [[_y] for _y in y_str]
         sources_list.extend(x_str)
-        sentences_target.extend([[sentence] for sentence in y_str])
+        sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
-        
-        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, bleu_score_metric(sentences_pred, sentences_target), torchmetrics.functional.rouge_score(sentences_pred, sentences_target)["rougeL_fmeasure"]))
+
         bleu_score.update(y_pred, y_str)
+        cur_bleu_score = bleu_score.compute()
+        
+        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, rouge_score.compute()["rougeL_measure"]))
         
         # break
         
-
-    bleu_score = bleu_score_metric(sentences_pred, sentences_target)
-    rouge_score = torchmetrics.functional.rouge_score(sentences_pred, sentences_target)["rougeL_fmeasure"]
-
-    print(f"BLEU: {bleu_score:.3f}, ROUGE: {rouge_score:.3f}")
+    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(bleu_score.compute(),  rouge_score.compute()["rougeL_measure"]))
     
-    return float(bleu_score), float(rouge_score), (sources_list, sentences_target, sentences_pred)
+    return float(bleu_score.compute()), float(rouge_score.compute()["rougeL_measure"]), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0
