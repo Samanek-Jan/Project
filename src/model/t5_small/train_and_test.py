@@ -179,7 +179,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         
     print("BLEU: {:.3f}, ROUGE: {:.3f}".format(bleu_score.compute(),  rouge_score.compute()["rougeL_fmeasure"]))
     
-    return float(bleu_score.compute()), float(rouge_score.compute()["rougeL_measure"]), (sources_list, sentences_target, sentences_pred)
+    return float(bleu_score.compute()), float(rouge_score.compute()["rougeL_fmeasure"]), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0

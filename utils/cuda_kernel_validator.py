@@ -1,5 +1,5 @@
 from ast import Dict
-from typing import Collection, Tuple
+from typing import Collection, List, Tuple
 from pymongo import MongoClient
 import sys, os
 import subprocess
@@ -11,7 +11,20 @@ import pymongo
 from bson.objectid import ObjectId
 import re
 
-MAX_COMPILE_TRIES = 15
+from data.parser.parser import Parser
+
+MAX_ATTEMPTS = 15
+db = MongoClient("mongodb://localhost:27017")["cuda_snippets"]
+train_db = db["train"]
+validation_db = db["validation"]
+files_metadata_db = db["file_metadata"]
+
+train_db.create_index("repo_name")
+train_db.create_index("kernel_name")
+train_db.create_index("validation.compiled")
+validation_db.create_index("repo_name")
+validation_db.create_index("kernel_name")
+validation_db.create_index("validation.compiled")
 
 def get_args():
     argparser = ArgumentParser()
@@ -125,65 +138,168 @@ def analyze_error(error_output : str) -> Dict:
     
     return error_analysis
 
-def apply_error_patch(error_analysis : Dict, file_metadata : Dict, db_collection):
-    # error_analysis = {
-    #     "missing_tokens" : [],
-    #     "wrong_vals" : [],
-    #     "syntax_errors" : [],
-    #     "missing_types" : [],
-    #     "include_errors" : []
-    # }
+def apply_error_patch(error_analysis : Dict, file_metadata : Dict):    
+    # if error_analysis["syntax_errors"]:
+    #     return None, False
     
-    if error_analysis["syntax_errors"]:
-        return None, False
+    # if error_analysis["include_errors"]:
+    #     return None, False
     
-    if error_analysis["include_errors"]:
-        return None, False
-    
+    tokens_content = ""
     if error_analysis["missing_tokens"]:
+        tokens_content = ""
         missing_tokens_obj_list = error_analysis["missing_tokens"]
         for token_obj in missing_tokens_obj_list:
             token_name = token_obj["identifier"]
-            return find_missing_token(token_name, file_metadata, db_collection)
-        
-    return None, False
+            proposal = search_global_vars(token_name, file_metadata)
+            if proposal is not None:
+                tokens_content = f"{proposal}\n\n{tokens_content}"
+                continue
             
+            proposal = search_db(token_name, file_metadata["repo_name"])
+            if proposal is not None:
+                tokens_content = f"{proposal}\n\n{tokens_content}"
+                continue
+            
+            proposal = search_custom_libs(token_name, file_metadata)
+            if proposal is not None:
+                tokens_content = f"{proposal}\n\n{tokens_content}"
+                continue
     
+    if tokens_content == "":
+        third_party_libs, _ = get_third_party_libraries(file_metadata)
+        tokens_content = "\n".join(third_party_libs)
+    
+    return tokens_content if tokens_content != "" else None, False
+            
 
-def find_missing_token(token_name, metadata, files_metadata):
-    return search_file_for_token(metadata["repo_name"], metadata["filename"], token_name, files_metadata)
-    
-    
-def search_file_for_token(repo_name : str, file_name : str, token_name : str, files_metadata):
-    file_name = file_name.split("/")[-1]
-    matching_headers = list(files_metadata.find({"repo_name" : repo_name, "filename" : file_name}))
-    
-    for header in matching_headers:
-        for global_var_obj in header["global_vars"]:
-            if global_var_obj["name"] == token_name:
-                return global_var_obj["full_line"], True
-    
-    libraries = set()
-    for header in matching_headers:
-        library_names = [include["full_line"].strip() for include in header["includes"] if include["is_custom_include"]]
-        for library_name in library_names:
-            library_proposal, found = search_file_for_token(repo_name, library_name, token_name, files_metadata)
-            if found:
-                return library_proposal
-            elif library_proposal is not None:
-                libraries.update(library_proposal)
+def search_custom_library_for_token(token_name : str, custom_library_metadata : dict, searched_libs : set = set()):
+    for global_var in custom_library_metadata["global_vars"]:
+        if token_name == global_var["name"]:
+            return global_var["full_line"], searched_libs
         
-        third_party_libraries = [include["full_line"].strip() for include in header["includes"] if not include["is_custom_include"]]
-        libraries.update(set(third_party_libraries))
-    
-    libraries = set(libraries)
-    if len(libraries) == 0:
-        return None, False
-    
-    return libraries, False
+    proposal = search_full_text(token_name, custom_library_metadata)
+    if proposal is not None:
+        return proposal, searched_libs
         
+    custom_libraries = list(files_metadata_db.find({"repo_name" : custom_library_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in custom_library_metadata["includes"] if include["is_custom_include"]]}}))
+    
+    for custom_library in custom_libraries:
+        if custom_library["filename"] in searched_libs:
+            continue
+        searched_libs.update([custom_library["filename"]])
+        proposal, sub_searched_libs = search_custom_library_for_token(token_name, custom_library, searched_libs)
+        searched_libs.update(sub_searched_libs)
+        if proposal is not None:
+            return proposal, searched_libs
+    
+    return None, searched_libs
+
+
+def get_third_party_libraries(custom_library : dict, searched_libs : set = set()):
+    third_party_libraries = []
+    for library in custom_library["includes"]:
+        if library["include_name"].split("/")[-1] in searched_libs:
+            continue
         
-def validate_kernel(kernel : Dict, files_metadata) -> Dict:
+        if library["is_custom_include"]:
+            library = files_metadata_db.find_one({"repo_name" : custom_library["repo_name"], "filename" : library["include_name"].split("/")[-1]})
+            if library is None:
+                continue
+            searched_libs.update([library["filename"]])
+            third_party_libs_addon, searched_libs_addon = get_third_party_libraries(library, searched_libs)
+            third_party_libraries.extend(third_party_libs_addon)
+            searched_libs.update(searched_libs_addon)
+        else:
+            third_party_libraries.append(library["full_line"].strip())
+    
+    return list(set(third_party_libraries)), searched_libs
+
+    
+def search_full_text(token_name : str, file_metadata : dict) -> str:
+    class_re = re.compile("(\W|^\s*)class\W")
+    struct_re = re.compile("(\W|^\s*)struct\W")
+    token_re = re.compile(f"\W{token_name}\W")
+    
+    full_content_lines : List[str] = file_metadata["full_content"].splitlines()
+    for i, line in enumerate(full_content_lines):
+        if not token_re.match(line):
+            continue
+        
+        non_comment_match = lambda reg, line: reg.match(line) is not None and (not line.lstrip().startswith("//") or not line.lstrip().startswith("*") or not line.rstrip().endswith(";"))
+        
+        proposal = []
+        is_class = non_comment_match(class_re, line)
+        is_struct = non_comment_match(struct_re, line)
+        if is_class or is_struct:
+            proposal.append(line)
+            j = i - 1
+            # Get prefix (template, rest of definition, ...)
+            while j >= 0:
+                j_line = full_content_lines[j]
+                if j_line.lstrip().startswith("//") or \
+                   j_line.rstrip().endswith("*/") or   \
+                   j_line.rstrip().endswith("}") or    \
+                   j_line.strip() == "":
+                    break
+                
+                proposal.insert(0, j_line)
+            
+            # Get rest of body
+            count_brackets = Parser().count_brackets
+            brackets_count = count_brackets(line)
+            j = i + 1
+            while j < len(full_content_lines):
+                j_line = full_content_lines[j]
+                brackets_count = count_brackets(j_line)
+                if brackets_count == 0:
+                    last_bracket_idx = j_line.rfind("}")
+                    if last_bracket_idx != -1:
+                        j_line = j_line[:last_bracket_idx]
+                    proposal.append(j_line[:last_bracket_idx])
+                    break
+                elif brackets_count < 0:
+                    for _ in range(abs(brackets_count)):
+                        last_bracket_idx = j_line.rfind("}")
+                        j_line = j_line[:last_bracket_idx]
+                    proposal.append(j_line)
+                    break
+                proposal.append(j_line)
+            
+            return "\n".join(proposal)
+    return None
+
+def search_global_vars(token_name : str, file_metadata : dict):
+    # 1. Try to find missing token in file global vars        
+    for global_var in file_metadata["global_vars"]:
+        if token_name == global_var["name"]:
+            return global_var["full_line"]
+            
+    return None
+
+def search_custom_libs(token_name : str, file_metadata : dict):
+    custom_libraries = list(files_metadata_db.find({"repo_name" : file_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in file_metadata["includes"] if include["is_custom_include"]]}}))
+    
+    # 2. Search for missing token in included custom libraries
+    for custom_library in custom_libraries:
+        proposal, _ = search_custom_library_for_token(token_name, custom_library)
+        if proposal is not None:
+            return proposal
+        
+    return None
+
+def search_db(token_name : str, repo_name : str):
+    # Search in train part
+    proposal = train_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+    if proposal != None:
+        return proposal
+    
+    # Search in validation part
+    return validation_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+
+
+             
+def validate_kernel(kernel : Dict) -> Dict:
 
     kernel_str = "\n{}{}\n".format(kernel["header"], kernel["body"])
     additional_content = """
@@ -193,20 +309,18 @@ int main() {
 
     kernel_validation = {
         "iterations" : [],
-        "max_iterations" : MAX_COMPILE_TRIES,
+        "max_iterations" : MAX_ATTEMPTS,
         "compiled" : None,
     }
     
-    used_libraries = set("cuda/helper_cuda.h")
-    
-    metadata : Dict = files_metadata.find_one({"_id" : ObjectId(kernel["file_metadata_id"])})
+    metadata : Dict = files_metadata_db.find_one({"_id" : ObjectId(kernel["file_metadata_id"])})
     if not metadata:
         raise MemoryError("Did not find kernel file metadata")
     
-    for i in range(1, MAX_COMPILE_TRIES+1):
-        
+    applied_third_party_libs = False
+    for attempt_idx in range(MAX_ATTEMPTS):        
         kernel_validation_iteration = {
-            "index" : i,
+            "attempt_idx" : attempt_idx,
             "stderr" : None,
             "stdout" : None,
             "retval" : None,
@@ -227,21 +341,16 @@ int main() {
         if retval == 0:
             kernel_validation["compiled"] = True
             break
-        
-        new_additional_content, found = apply_error_patch(error_analyses, metadata, files_metadata)
-        if not found and new_additional_content is not None:
-            new_additional_content = new_additional_content.difference(used_libraries)
-            if len(new_additional_content) == 0:
-                kernel_validation["compiled"] = False
-                break
-            used_libraries.update(new_additional_content)
-            new_additional_content = "\n".join(new_additional_content)
-        elif new_additional_content is None:
+                
+        patch_proposal, found = apply_error_patch(error_analyses, metadata)
+        if found == True or (not applied_third_party_libs and patch_proposal is not None):
+            if not found:
+                applied_third_party_libs = True
+            additional_content = f"{patch_proposal}\n\n{additional_content}"
+        else:
             kernel_validation["compiled"] = False
             break
-            
-        additional_content = new_additional_content + "\n" + additional_content
-        
+
     return kernel_validation
             
 def get_nvcc_version():
@@ -252,48 +361,50 @@ def get_nvcc_version():
     return completedProcess.stdout.decode("utf-8")
     
 
-def validate_db():
-    db = MongoClient("mongodb://localhost:27017")["cuda_snippets"]
-    train = db["train"]
-    validate = db["validation"]
-    file_metadatas = db["file_metadata"]
-    
+def validate_db():    
     nvcc_info = get_nvcc_version()
     compiled = 0
     not_compiled = 0
+    pbar = tqdm(tuple(train_db.find()))
     
     print("Validating train part")
-    for kernel in tqdm(tuple(train.find())):
-        validation_result = validate_kernel(kernel, file_metadatas)
+    for kernel in pbar:
+        validation_result = validate_kernel(kernel)
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
             compiled += 1
         else:
             not_compiled += 1
         
+        pbar.set_description_str(f"Compiled ratio: {compiled/(compiled+not_compiled):.2%}")
+        
         new_vals = {
             "$set" : {"validation" : validation_result}
         }
-        train.update_one({"_id" : kernel["_id"]}, new_vals)
+        train_db.update_one({"_id" : kernel["_id"]}, new_vals)
     
     print(f"Compiled successfully: {compiled}")
     print(f"Compilation failed   : {not_compiled}")
     
     compiled = 0
     not_compiled = 0
+    pbar = tqdm(tuple(validation_db.find()))
     
     print("Validating validate part")
-    for kernel in tqdm(tuple(validate.find())):
-        validation_result = validate_kernel(kernel, file_metadatas)
+    for kernel in pbar:
+        validation_result = validate_kernel(kernel)
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
             compiled += 1
         else:
             not_compiled += 1
+
+        pbar.set_description_str(f"Compiled ratio: {compiled/(compiled+not_compiled):.2%}")
+
         new_vals = {
             "$set" : {"validation" : validation_result}
         }
-        validate.update_one({"_id" : kernel["_id"]}, new_vals)
+        validation_db.update_one({"_id" : kernel["_id"]}, new_vals)
     
     print(f"Compiled successfully: {compiled}")
     print(f"Compilation failed   : {not_compiled}")

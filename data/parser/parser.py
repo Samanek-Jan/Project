@@ -21,7 +21,7 @@ COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp"
 DATA_FILE_SUFFIX = ".data.json"
 
 IN_FOLDER = "../raw"
-TRAIN_RATIO = 0.75
+TRAIN_RATIO = 0.8
 
 class Parser:
 
@@ -139,6 +139,11 @@ class Parser:
         includes, global_vars = self.__get_includes_and_global_vars(content)
         file_metadata["includes"] = includes
         file_metadata["global_vars"] = global_vars
+        file_metadata["full_content"] = content
+        
+        
+        if filename.split(".")[-1] in HEADER_FILE_SUFFIXES:
+            file_metadata["full_content"] = content
         
         return file_metadata
         
@@ -253,7 +258,15 @@ class Parser:
             s += "{}{}. param. {}{},\n".format(prefix, i, t+" " if print_types else "", name)
         
         return s.rstrip()
+    
+    def __get_kernel_name(self, header : str):
+        copy_header = header.replace("\n", " ")
+        r = re.compile("(?:(.+)\()")
+        res = r.match(copy_header)
+        if res is None:
+            raise ValueError("parser.__get_kernel_name: Could not parse kernel name")
         
+        return res[1].split(" ")[-1].strip()
     
     def __get_cuda_headers(self, content : str) -> List:
         cuda_prefix_function_regex = r"(__device__|__host__|__global__)+"
@@ -279,6 +292,7 @@ class Parser:
                     end_header_idx = content_idx + start_body_idx
                     cuda_header["end_idx"] = end_header_idx
                     cuda_header["header"] = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                    cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
                     cuda_headers.append(cuda_header)
                     cuda_header = None
                 elif cuda_header is not None and line.find(";") != -1:
@@ -424,7 +438,7 @@ def fetch_files(in_folder : str, root_path = "", repo_name = None, root=True) ->
         if os.path.isdir(full_path):
             if repo_name is None:
                 repo_name = file
-            wanted_files.extend(fetch_files(full_path, os.path.join(root_path, file), repo_name, False))
+            wanted_files.extend(fetch_files(full_path, os.path.join(root_path, file), repo_name, True))
         
         elif file.split(".")[-1] in COMPATIBLE_FILE_SUFFIXES:
             wanted_files.append(
@@ -505,8 +519,9 @@ def parse_folder() -> None:
                 
                 for kernel in kernels:
                     kernel["file_metadata_id"] = str(insert_result.inserted_id)
-                    
+                    kernel["repo_name"] = repo_name
                     is_train_data = random.random() * scaling_const < variable_train_ratio
+                    
                     if is_train_data or kernel.get("has_generated_comment", False):
                         variable_train_ratio -= (1-TRAIN_RATIO)
                         train_data_counter += 1
