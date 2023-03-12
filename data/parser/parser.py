@@ -115,14 +115,14 @@ class Parser:
                 continue
             
             kernels.append({
-                "comment"       : comment,
-                "header"        : cuda_header["header"],
-                "body"          : body,
-                "type"          : "function",
-                "is_cuda"        : True,
-                "is_from_cuda_file" : self.is_current_file_gpu,
+                "comment"               : comment,
+                "header"                : cuda_header["header"],
+                "body"                  : body,
+                "kernel_name"           : cuda_header["kernel_name"],
+                "type"                  : "function",
+                "is_from_cuda_file"     : self.is_current_file_gpu,
                 "has_generated_comment" : has_generated_comment,
-                "filename" : filename
+                "filename"              : filename
             })
         
         file_metadata = None
