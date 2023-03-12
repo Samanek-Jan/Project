@@ -100,10 +100,10 @@ class Parser:
         for line in lines:
             matches = re.findall("((\S+)::)", line)
             for match in matches:
-                if match[1] in exceptions:
+                if match[2] in exceptions:
                     continue
                 else:
-                    line = line.replace(match[0], "")
+                    line = line.replace(match[1], "")
 
             clean_content += line
 
@@ -173,24 +173,23 @@ class Parser:
         for i, line in enumerate(lines, 1):
             if (match := re.match(include_re, line)):
                 includes.append({
-                    "full_line" : match[0],
+                    "full_line" : self.remove_namespaces(match[0]),
                     "is_custom_include" : True if match[1] == "\"" else False,
-                    "include_name" : match[2].strip(),
-                    "is_header" : match[2].split(".")[-1] in HEADER_FILE_SUFFIXES,
+                    "include_name" : self.remove_namespaces(match[2].strip()),
                     "line" : i
                 })
             elif (match := re.match(define_re, line)):
                 global_vars.append({
-                    "full_line" : match[0],
+                    "full_line" : self.remove_namespaces(match[0]),
                     "name" : match[1].strip(),
                     "value" : match[2].strip(),
                     "line" : i
                 })
             elif (match := re.match(global_var_with_val_re, line)):
                 global_vars.append({
-                    "full_line" : match[0],
-                    "type" : match[1].strip(),
-                    "name" : match[3].strip().lstrip("*").lstrip("&"),
+                    "full_line" : self.remove_namespaces(match[0]),
+                    "type" : self.remove_namespaces(match[1].strip()),
+                    "name" : self.remove_namespaces(match[3].strip().lstrip("*").lstrip("&")),
                     "value" : match.group(4).strip(),
                     "line" : i
                 })

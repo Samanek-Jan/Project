@@ -48,7 +48,7 @@ def compile(file_content):
     with open(tmp_file, "w") as fd:
         fd.write(file_content)
     
-    completedProcess = subprocess.run(["nvcc", tmp_file, "-o", f"{tmp_file}.o"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    completedProcess = subprocess.run(["nvcc", tmp_file, "-o", f"{tmp_file}.o", "-std=c++17"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout = completedProcess.stdout.decode('utf-8')
     stderr = completedProcess.stderr.decode('utf-8')
     if os.path.isfile(f"{tmp_file}.o"):
@@ -268,7 +268,7 @@ def search_full_text(token_name : str, file_metadata : dict) -> str:
                     break
                 proposal.append(j_line)
             
-            return "\n".join(proposal)
+            return Parser().remove_namespaces("\n".join(proposal))
     return None
 
 def search_global_vars(token_name : str, file_metadata : dict):
