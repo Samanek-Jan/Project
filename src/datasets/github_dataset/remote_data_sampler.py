@@ -85,7 +85,7 @@ class RemoteDataSampler():
                         last_idx = trimmed_line.rfind("}")
                         code_lines.append(trimmed_line[:last_idx+1])    
                         commented_blocks.append(
-                            ["".join(comment_lines).replace("\r\n", "\n"), BOS_TOKEN + "".join(code_lines).replace("\r\n", "\n") + EOS_TOKEN]
+                            ["".join(comment_lines).replace("\r\n", "\n").rstrip() + "\n", BOS_TOKEN + "".join(code_lines).replace("\r\n", "\n") + EOS_TOKEN]
                         )
                     
                         comment_lines.clear()

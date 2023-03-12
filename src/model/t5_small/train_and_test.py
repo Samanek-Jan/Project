@@ -19,7 +19,7 @@ from src.datasets.local_dataset.local_dataset import LocalDataset
 
 def main():
     print(f"Using {DEVICE}")
-    pretraining = True
+    pretraining = False
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
@@ -30,6 +30,7 @@ def main():
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
     
+    pretraining = args.pretraining
     # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
     global MAX_SEQUENCE_SIZE
@@ -112,7 +113,7 @@ def train_and_test(model,
             bleu, rouge, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
             bv_bleu = best_version["BLEU"]
             print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
-            if bv_bleu < bleu:
+            if bleu >= bv_bleu:
                 best_version = {
                     "model_dict" : deepcopy(model.state_dict()),
                     "optimizer_dict" : deepcopy(optimizer.state_dict()),
@@ -139,7 +140,7 @@ def train_and_test(model,
         #     print(json.dumps(obj, indent=2))
         # print("--------------------------------\n")
         
-        if bleu > max_bleu:
+        if bleu >= max_bleu:
             max_bleu = bleu
             
         torch.cuda.empty_cache()
@@ -153,18 +154,18 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     sources_list = []
     sentences_target = []
     sentences_pred = []
-    tokenizer : Tokenizer = test_dataloader.dataset.datasampler.tokenizer
+    tokenizer = test_dataloader.dataset.datasampler.tokenizer
 
     test_dataloader = tqdm(test_dataloader, leave=False)
 
-    bleu_score = torchmetrics.BLEUScore()
-    rouge_score = torchmetrics.text.rouge.ROUGEScore()
+    bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
+    rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer)
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
-        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
+        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
         
         rouge_score.update(y_pred, y_str)
-        y_str = [[_y] for _y in y_str]
+        y_str = [[y_sentence] for y_sentence in y_str]
         sources_list.extend(x_str)
         sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
@@ -172,11 +173,11 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
         
-        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, rouge_score.compute()["rougeL_measure"]))
+        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, rouge_score.compute()["rougeL_fmeasure"]))
         
         # break
         
-    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(bleu_score.compute(),  rouge_score.compute()["rougeL_measure"]))
+    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(bleu_score.compute(),  rouge_score.compute()["rougeL_fmeasure"]))
     
     return float(bleu_score.compute()), float(rouge_score.compute()["rougeL_measure"]), (sources_list, sentences_target, sentences_pred)
 
