@@ -19,12 +19,27 @@ train_db = db["train"]
 validation_db = db["validation"]
 files_metadata_db = db["file_metadata"]
 
+train_db.create_index("_id")
 train_db.create_index("repo_name")
 train_db.create_index("kernel_name")
 train_db.create_index("validation.compiled")
+
+validation_db.create_index("_id")
 validation_db.create_index("repo_name")
 validation_db.create_index("kernel_name")
 validation_db.create_index("validation.compiled")
+
+def get_nvcc_version():
+    completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if completedProcess.returncode != 0:
+        raise SystemError(f"Could not get NVCC info.\Retval: {completedProcess.returncode}\n Stderr: {completedProcess.stderr}\n")
+
+    return completedProcess.stdout.decode("utf-8")
+    
+
+compiled = 0
+not_compiled = 0
+nvcc_info = get_nvcc_version()
 
 def get_args():
     argparser = ArgumentParser()
@@ -55,7 +70,7 @@ def compile(file_content):
         os.remove(f"{tmp_file}.o")
     
     return completedProcess.returncode, stdout, stderr
-    
+
     
 def analyze_error(error_output : str) -> Dict:
     error_lines = error_output.splitlines()
@@ -147,10 +162,14 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict):
     
     tokens_content = ""
     if error_analysis["missing_tokens"]:
+        searched_tokens = set()
         tokens_content = ""
         missing_tokens_obj_list = error_analysis["missing_tokens"]
         for token_obj in missing_tokens_obj_list:
             token_name = token_obj["identifier"]
+            if token_name in searched_tokens:
+                continue
+            searched_tokens.add(token_name)
             proposal = search_global_vars(token_name, file_metadata)
             if proposal is not None:
                 tokens_content = f"{proposal}\n\n{tokens_content}"
@@ -175,16 +194,16 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict):
         return remove_namespaces(tokens_content), True
             
 
-def search_custom_library_for_token(token_name : str, custom_library_metadata : dict, searched_libs : set = set()):
-    for global_var in custom_library_metadata["global_vars"]:
+def search_custom_library_for_token(token_name : str, custom_metadata : dict, searched_libs : set = set()):
+    for global_var in custom_metadata["global_vars"]:
         if token_name == global_var["name"]:
             return global_var["full_line"], searched_libs
         
-    proposal = search_full_text(token_name, custom_library_metadata)
+    proposal = search_full_text(token_name, custom_metadata)
     if proposal is not None:
         return proposal, searched_libs
         
-    custom_libraries = list(files_metadata_db.find({"repo_name" : custom_library_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in custom_library_metadata["includes"] if include["is_custom_include"]]}}))
+    custom_libraries = list(files_metadata_db.find({"repo_name" : custom_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in custom_metadata["includes"] if include["is_custom_include"]]}}))
     
     for custom_library in custom_libraries:
         if custom_library["filename"] in searched_libs:
@@ -228,7 +247,7 @@ def search_full_text(token_name : str, file_metadata : dict) -> str:
         if not token_re.match(line):
             continue
         
-        non_comment_match = lambda reg, line: reg.match(line) is not None and (not line.lstrip().startswith("//") or not line.lstrip().startswith("*") or not line.rstrip().endswith(";"))
+        non_comment_match = lambda reg, line: reg.match(line) is not None and not line.lstrip().startswith("//") and not line.lstrip().startswith("*") and not line.rstrip().endswith("*/") and not line.rstrip().endswith(";")
         
         proposal = []
         is_class = non_comment_match(class_re, line)
@@ -280,27 +299,67 @@ def search_global_vars(token_name : str, file_metadata : dict):
     return None
 
 def search_custom_libs(token_name : str, file_metadata : dict):
-    custom_libraries = list(files_metadata_db.find({"repo_name" : file_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in file_metadata["includes"] if include["is_custom_include"]]}}))
+    proposal, _ = search_custom_library_for_token(token_name, file_metadata)
+    # custom_libraries = list(files_metadata_db.find({"repo_name" : file_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in file_metadata["includes"] if include["is_custom_include"]]}}))
     
-    # 2. Search for missing token in included custom libraries
-    for custom_library in custom_libraries:
-        proposal, _ = search_custom_library_for_token(token_name, custom_library)
-        if proposal is not None:
-            return proposal
+    # # 2. Search for missing token in included custom libraries
+    # for custom_library in custom_libraries:
+    #     proposal, _ = search_custom_library_for_token(token_name, custom_library)
+    #     if proposal is not None:
+    #         return proposal
         
-    return None
+    return proposal
 
 def search_db(token_name : str, repo_name : str):
+    global compiled
+    global not_compiled
+    
     # Search in train part
-    proposal = train_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
-    if proposal != None:
-        return "{}\n{}".format(proposal["header"], proposal["body"])
+    kernel = train_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+    if kernel != None:
+        if kernel.get("validation"):
+            return "{}\n{}".format(kernel["header"], kernel["body"])
+        else:
+            validation_result = validate_kernel(kernel)
+            validation_result["nvcc_info"] = nvcc_info
+            if validation_result["compiled"]:
+                compiled += 1
+            else:
+                not_compiled += 1
+            
+            new_vals = {
+                "$set" : {"validation" : validation_result}
+            }
+            train_db.update_one({"_id" : kernel["_id"]}, new_vals)
+            if validation_result["compiled"]:
+                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[:-4])
+                return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
+            else:
+                return None
+                
     
     # Search in validation part
-    proposal = validation_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
-    if proposal != None:
-        return "{}\n{}".format(proposal["header"], proposal["body"])
-
+    kernel = validation_db.find_one({"repo_name" : repo_name, "kernel_name" : token_name, "$or" : [{"validation.compiled" : {"$exists" : False}}, {"validation.compiled" : True}]})
+    if kernel != None:
+        if kernel.get("validation"):
+            return "{}\n{}".format(kernel["header"], kernel["body"])
+        else:
+            validation_result = validate_kernel(kernel)
+            validation_result["nvcc_info"] = nvcc_info
+            if validation_result["compiled"]:
+                compiled += 1
+            else:
+                not_compiled += 1
+            
+            new_vals = {
+                "$set" : {"validation" : validation_result}
+            }
+            validation_db.update_one({"_id" : kernel["_id"]}, new_vals)
+            if validation_result["compiled"]:
+                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[:-4])
+                return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
+            else:
+                return None
     return None
              
 def validate_kernel(kernel : Dict) -> Dict:
@@ -339,7 +398,6 @@ int main() {
         
         error_analyses = analyze_error(stderr)
         kernel_validation_iteration["error_analyses"] = error_analyses
-        
         kernel_validation["iterations"].append(kernel_validation_iteration)
         
         if retval == 0:
@@ -356,23 +414,18 @@ int main() {
             break
 
     return kernel_validation
-            
-def get_nvcc_version():
-    completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if completedProcess.returncode != 0:
-        raise SystemError(f"Could not get NVCC info.\Retval: {completedProcess.returncode}\n Stderr: {completedProcess.stderr}\n")
-
-    return completedProcess.stdout.decode("utf-8")
-    
 
 def validate_db():    
-    nvcc_info = get_nvcc_version()
-    compiled = 0
-    not_compiled = 0
     pbar = tqdm(tuple(train_db.find()))
+    global compiled
+    global not_compiled
     
     print("Validating train part")
     for kernel in pbar:
+        # Already validated in recursion function
+        if train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+            continue
+        
         validation_result = validate_kernel(kernel)
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
@@ -396,6 +449,10 @@ def validate_db():
     
     print("Validating validate part")
     for kernel in pbar:
+        # Already validated in recursion function
+        if train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+            continue
+        
         validation_result = validate_kernel(kernel)
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
@@ -415,6 +472,9 @@ def validate_db():
     
         
 if __name__ == "__main__":
+    train_db.update_many({}, {"$unset" : {"validation" : ""}})
+    validation_db.update_many({}, {"$unset" : {"validation" : ""}} )
+    
     validate_db()
 
     

@@ -100,10 +100,10 @@ class Parser:
         for line in lines:
             matches = re.findall("((\S+)::)", line)
             for match in matches:
-                if match[2] in exceptions:
+                if match[1] in exceptions:
                     continue
                 else:
-                    line = line.replace(match[1], "")
+                    line = line.replace(match[0], "")
 
             clean_content += line
 
@@ -154,10 +154,7 @@ class Parser:
         file_metadata["includes"] = includes
         file_metadata["global_vars"] = global_vars
         file_metadata["full_content"] = content
-        
-        
-        if filename.split(".")[-1] in HEADER_FILE_SUFFIXES:
-            file_metadata["full_content"] = content
+        file_metadata["is_header"] = filename.split(".")[-1] in HEADER_FILE_SUFFIXES
         
         return file_metadata
         
