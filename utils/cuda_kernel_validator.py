@@ -29,6 +29,8 @@ validation_db.create_index("repo_name")
 validation_db.create_index("kernel_name")
 validation_db.create_index("validation.compiled")
 
+queried_kernel_ids = set()
+
 def get_nvcc_version():
     completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if completedProcess.returncode != 0:
@@ -319,7 +321,9 @@ def search_db(token_name : str, repo_name : str):
     if kernel != None:
         if kernel.get("validation"):
             return "{}\n{}".format(kernel["header"], kernel["body"])
-        else:
+        elif str(kernel["_id"]) not in queried_kernel_ids:
+            queried_kernel_ids.add(str(kernel["_id"]))
+            
             validation_result = validate_kernel(kernel)
             validation_result["nvcc_info"] = nvcc_info
             if validation_result["compiled"]:
@@ -336,6 +340,7 @@ def search_db(token_name : str, repo_name : str):
                 return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
             else:
                 return None
+        return None
                 
     
     # Search in validation part
