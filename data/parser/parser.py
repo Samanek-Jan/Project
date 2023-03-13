@@ -19,8 +19,9 @@ GPU_FILE_SUFFIXES = set(["cu", "hu", "cuh"])
 HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
+MAX_LINE_LENGTH = 500
 
-IN_FOLDER = "../raw"
+IN_FOLDER = "../../../data/raw"
 TRAIN_RATIO = 0.8
 
 class Parser:
@@ -98,6 +99,9 @@ class Parser:
         lines = content.splitlines(keepends=True)
         clean_content = ""
         for line in lines:
+            if len(line) == MAX_LINE_LENGTH:
+                continue
+            
             matches = re.findall("((\S+)::)", line)
             for match in matches:
                 if match[1] in exceptions:
