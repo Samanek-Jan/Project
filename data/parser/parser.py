@@ -97,18 +97,15 @@ class Parser:
     
     def remove_namespaces(self, content : str, exceptions=["std"]):
         lines = content.splitlines(keepends=True)
+        r = re.compile("((\S+)::)")
         clean_content = ""
         for line in lines:
-            if len(line) == MAX_LINE_LENGTH:
-                continue
-            
-            matches = re.findall("((\S+)::)", line)
-            for match in matches:
-                if match[1] in exceptions:
-                    continue
-                else:
+            match = r.match(line)
+            while match is not None:
+                if match[1] not in exceptions:
                     line = line.replace(match[0], "")
-
+                match = r.match(line)
+                
             clean_content += line
 
         return clean_content    
