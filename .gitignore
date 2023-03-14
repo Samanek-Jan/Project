@@ -24,11 +24,4 @@ utils/a.out
 */a.out
 cuda_test_file.cu
 a.out
-data/stack-overflow/
-data/stack-overflow/Comments.xml
-data/stack-overflow/Posts.xml
-data/stack-overflow/stackoverflow.com-Comments.7z
-data/stack-overflow/Stackoverflow.com-Posts.7z
-data/stack-overflow/stackoverflow.com-Tags.7z
-data/stack-overflow/structure_summary.json
-data/stack-overflow/Tags.xml
+data/*

@@ -29,6 +29,10 @@ validation_db.create_index("repo_name")
 validation_db.create_index("kernel_name")
 validation_db.create_index("validation.compiled")
 
+files_metadata_db.create_index("filename")
+files_metadata_db.create_index("repo_name")
+
+
 queried_kernel_ids = set()
 
 def get_nvcc_version():
@@ -326,19 +330,17 @@ def search_db(token_name : str, repo_name : str):
             
             validation_result = validate_kernel(kernel)
             validation_result["nvcc_info"] = nvcc_info
-            if validation_result["compiled"]:
-                compiled += 1
-            else:
-                not_compiled += 1
             
             new_vals = {
                 "$set" : {"validation" : validation_result}
             }
             train_db.update_one({"_id" : kernel["_id"]}, new_vals)
             if validation_result["compiled"]:
+                compiled += 1
                 add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[:-4])
                 return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
             else:
+                not_compiled += 1
                 return None
         return None
                 
