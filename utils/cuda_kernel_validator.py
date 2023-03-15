@@ -214,7 +214,7 @@ def search_custom_library_for_token(token_name : str, custom_metadata : dict, se
     for custom_library in custom_libraries:
         if custom_library["filename"] in searched_libs:
             continue
-        searched_libs.update([custom_library["filename"]])
+        searched_libs.add(custom_library["filename"])
         proposal, sub_searched_libs = search_custom_library_for_token(token_name, custom_library, searched_libs)
         searched_libs.update(sub_searched_libs)
         if proposal is not None:
@@ -350,7 +350,8 @@ def search_db(token_name : str, repo_name : str):
     if kernel != None:
         if kernel.get("validation"):
             return "{}\n{}".format(kernel["header"], kernel["body"])
-        else:
+        elif str(kernel["_id"]) not in queried_kernel_ids:
+            queried_kernel_ids.add(str(kernel["_id"]))
             validation_result = validate_kernel(kernel)
             validation_result["nvcc_info"] = nvcc_info
             if validation_result["compiled"]:
@@ -385,7 +386,7 @@ int main() {
     
     metadata : Dict = files_metadata_db.find_one({"_id" : ObjectId(kernel["file_metadata_id"])})
     if not metadata:
-        raise MemoryError("Did not find kernel file metadata")
+        raise MemoryError("Did not find kernel file metadata (kernel id: {})".format(str(kernel["_id"])))
     
     applied_third_party_libs = False
     for attempt_idx in range(MAX_ATTEMPTS):        
@@ -457,7 +458,7 @@ def validate_db():
     print("Validating validate part")
     for kernel in pbar:
         # Already validated in recursion function
-        if train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+        if validation_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
             continue
         
         validation_result = validate_kernel(kernel)
