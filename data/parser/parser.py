@@ -1,4 +1,3 @@
-import json
 import re
 import sys, os
 import random
@@ -8,9 +7,6 @@ from tqdm import tqdm
 from pymongo import MongoClient
 import random
 
-from data.parser.parser_exceptions import BracketCountErrorException, InvalidCharacterException, InvalidTypeException, ParsingFunctionException, ProcessingObjectException
-from data.parser.parsing_object import PARSED_FUNCTION_TEMPLATE, PARSING_OBJECTS, PARSING_TYPES
-
 
 MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
 DATABASE_NAME = "cuda_snippets"
@@ -19,7 +15,6 @@ GPU_FILE_SUFFIXES = set(["cu", "hu", "cuh"])
 HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
-MAX_LINE_LENGTH = 500
 
 IN_FOLDER = "../../../data/raw"
 TRAIN_RATIO = 0.8
@@ -29,7 +24,7 @@ class Parser:
     def __init__(self):
         
         self.bracket_counter      : int                = 0
-        self.parsed_object_list     : List               = []
+        self.parsed_object_list   : List               = []
         self.is_current_file_gpu  : bool               = False
         self.is_parsing_comment   : bool               = False
         self.filename             : str                = ""
@@ -95,7 +90,7 @@ class Parser:
             content = fd.read()
             return self.__process_str(content, os.path.split(filename)[1])
     
-    def remove_namespaces(self, content : str, exceptions=["std"]):
+    def remove_namespaces(self, content : str, exceptions=set(["std"])):
         lines = content.splitlines(keepends=True)
         r = re.compile("((\S+)::)")
         clean_content = ""

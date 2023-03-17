@@ -35,6 +35,8 @@ files_metadata_db.create_index("repo_name")
 
 queried_kernel_ids = set()
 
+TMP_FILE = "cuda_test_file.cu"
+
 def get_nvcc_version():
     completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if completedProcess.returncode != 0:
@@ -64,16 +66,15 @@ def get_args():
     return args
 
 def compile(file_content):
-    tmp_file = "cuda_test_file.cu"
     
-    with open(tmp_file, "w") as fd:
+    with open(TMP_FILE, "w") as fd:
         fd.write(file_content)
     
-    completedProcess = subprocess.run(["nvcc", tmp_file, "-o", f"{tmp_file}.o", "-std=c++17"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    completedProcess = subprocess.run(["nvcc", TMP_FILE, "-o", f"{TMP_FILE}.o", "-std=c++17"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout = completedProcess.stdout.decode('utf-8')
     stderr = completedProcess.stderr.decode('utf-8')
-    if os.path.isfile(f"{tmp_file}.o"):
-        os.remove(f"{tmp_file}.o")
+    if os.path.isfile(f"{TMP_FILE}.o"):
+        os.remove(f"{TMP_FILE}.o")
     
     return completedProcess.returncode, stdout, stderr
 
@@ -484,6 +485,8 @@ if __name__ == "__main__":
     validation_db.update_many({}, {"$unset" : {"validation" : ""}} )
     
     validate_db()
-
+    
+    if os.path.exists(TMP_FILE):
+        os.remove(TMP_FILE)
     
     
