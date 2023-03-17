@@ -16,10 +16,12 @@ from src.model.t5_small.config import BATCH_SIZE, LR, MODELS_OUT_FOLDER, WARMUP_
 from src.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.datasets.local_dataset.local_dataset import LocalDataset
 
+pretraining = False
+
 
 def main():
     print(f"Using {DEVICE}")
-    pretraining = False
+    global pretraining
     argument_parser = argparse.ArgumentParser("Training and testing script")
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
@@ -37,13 +39,16 @@ def main():
     MAX_SEQUENCE_SIZE = configuration.n_positions
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, model_max_length=MAX_SEQUENCE_SIZE)
-    
+    model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
+    model.resize_token_embeddings(len(tokenizer))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+        
     # Initializing a model from the configuration
     if args.model is not None:
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
-    else:
-        model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
-        model.resize_token_embeddings(len(tokenizer))
+        model_dict = torch.load(args.model)
+        model.load_state_dict(model_dict["model_dict"])
+        optimizer.load_state_dict(model_dict["optimizer_dict"])
+
     
     collate_f = CollateFunctor(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE)
     
@@ -60,11 +65,12 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    train_and_test(model, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder)
+    train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder)
     print("Done")
 
 
-def train_and_test(model, 
+def train_and_test(model,
+                   optimizer,
                    train_dataloader, 
                    test_dataloader,
                    epoch_n,
@@ -72,12 +78,9 @@ def train_and_test(model,
                    output_folder,
                    eval_every_n = 1):
     
+    global pretraining
+    
     best_version = {"BLEU" : float("-inf")}
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-    
-    # optimizer = transformer_AdamW_LLRD(model)
-    # scheduler = LinearLR(optimizer)
-    
     scheduler = transformers.get_constant_schedule_with_warmup(                
             optimizer = optimizer,
             num_warmup_steps = WARMUP_DURATION
@@ -88,7 +91,7 @@ def train_and_test(model,
     tokenizer = train_dataloader.dataset.datasampler.tokenizer
     
     for epoch in range(1, epoch_n+1):
-        pbar = tqdm(iter(train_dataloader), leave=True)
+        pbar = tqdm(iter(train_dataloader), leave=False)
         model.train()
 
         for (x, x_str), (y, y_str) in pbar:
@@ -125,20 +128,20 @@ def train_and_test(model,
                     "pred_sentences" : pred_sentences,
                 }
                     
-                full_path = os.path.join(output_folder, f"{model_name}.pt")
+                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
                 torch.save(best_version, full_path) 
         
-        # print(f"Training bleu score = {score_val:.3f}")
-        # print(f"Example of translations")
-        # rand_inds = torch.randint(0, len(target_sentences), (3,))
-        # for i in rand_inds:
-        #     obj = {
-        #         "source" : source_sentences[i],
-        #         "target" : target_sentences[i][0],
-        #         "predic" : pred_sentences[i]
-        #     }
-        #     print(json.dumps(obj, indent=2))
-        # print("--------------------------------\n")
+        print(f"Training bleu score = {bleu:.3f}")
+        print(f"Examples")
+        rand_inds = torch.randint(0, len(target_sentences), (3,))
+        for i in rand_inds:
+            obj = {
+                "SOURCE" : source_sentences[i],
+                "TARGET" : target_sentences[i][0],
+                "PREDIC" : pred_sentences[i]
+            }
+            print(json.dumps(obj, indent=2))
+        print("--------------------------------\n")
         
         if bleu >= max_bleu:
             max_bleu = bleu
@@ -165,11 +168,11 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
         
         rouge_score.update(y_pred, y_str)
-        y_str = [[y_sentence] for y_sentence in y_str]
         sources_list.extend(x_str)
         sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
 
+        y_str = [[y_sentence] for y_sentence in y_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
         
