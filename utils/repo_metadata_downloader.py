@@ -43,6 +43,7 @@ if __name__ == "__main__":
         
         doc = repo_metadata_db.insert_one({
             "full_name" : full_name,
+            "url" : url,
             "status" : STATUS_ENUM["PENDING"]
         })
 
