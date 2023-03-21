@@ -8,6 +8,7 @@ from tqdm import tqdm
 import argparse
 import transformers
 import json
+from torchmetrics.functional.text.rouge import rouge_score
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 from src.datasets.collate_functor import CollateFunctor
 from src.datasets.config import BOS_TOKEN, DEVICE, EOS_TOKEN, MASK_TOKEN, MAX_SEQUENCE_SIZE, PAD_TOKEN
@@ -59,8 +60,8 @@ def main():
         train_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "train")
         valid_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "valid")
         
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_f)
-    valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_f)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_f) # type: ignore
+    valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_f) # type: ignore
         
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
@@ -80,15 +81,20 @@ def train_and_test(model,
     
     global pretraining
     
-    best_version = {"BLEU" : float("-inf")}
+    best_version = {"bv_BLEU" : float("-inf")}
     scheduler = transformers.get_constant_schedule_with_warmup(                
             optimizer = optimizer,
             num_warmup_steps = WARMUP_DURATION
     )
     
-    max_bleu = best_version["BLEU"]
+    max_bleu = best_version["bv_BLEU"]
     bleu_score = torchmetrics.BLEUScore()
     tokenizer = train_dataloader.dataset.datasampler.tokenizer
+    
+    loss_list = []
+    epoch_loss = []
+    bleu_list = []
+    rouge_list = []
     
     for epoch in range(1, epoch_n+1):
         pbar = tqdm(iter(train_dataloader), leave=False)
@@ -104,9 +110,13 @@ def train_and_test(model,
             bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
             
             pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
-            # print(f"loss = {loss.item():.4f}")
+            epoch_loss.append(float(loss.item()))
             loss.backward()
             optimizer.step()
+            # break
+        
+        loss_list.append(float(torch.mean(torch.tensor(epoch_loss)).item()))
+        epoch_loss.clear()
             
         scheduler.step()
         bleu_score.reset()
@@ -114,21 +124,26 @@ def train_and_test(model,
         if epoch % eval_every_n == 0:
             pbar_prefix = f"[{epoch}/{epoch_n}]"
             bleu, rouge, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
-            bv_bleu = best_version["BLEU"]
+            bv_bleu = best_version["bv_BLEU"]
+            bleu_list.append(bleu)
+            rouge_list.append(bleu)
             print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
             if bleu >= bv_bleu:
                 best_version = {
                     "model_dict" : deepcopy(model.state_dict()),
                     "optimizer_dict" : deepcopy(optimizer.state_dict()),
-                    "BLEU" : bleu,
-                    "ROUGE" : rouge,
+                    "loss_list" : loss_list,
+                    "BLEU_list" : bleu_list,
+                    "ROUGE_list" : rouge_list,
                     "epoch" : epoch,
                     "source_sentences" : source_sentences,
                     "target_sentences" : target_sentences,
                     "pred_sentences" : pred_sentences,
+                    "bv_BLEU" : bleu
                 }
                     
-                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
+                # full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
+                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_from_scratch"))
                 torch.save(best_version, full_path) 
         
         print(f"Training bleu score = {bleu:.3f}")
@@ -137,7 +152,7 @@ def train_and_test(model,
         for i in rand_inds:
             obj = {
                 "SOURCE" : source_sentences[i],
-                "TARGET" : target_sentences[i][0],
+                "TARGET" : target_sentences[i],
                 "PREDIC" : pred_sentences[i]
             }
             print(json.dumps(obj, indent=2))
@@ -162,12 +177,14 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     test_dataloader = tqdm(test_dataloader, leave=False)
 
     bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
-    rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer)
+    cur_bleu_score = 0
+    cur_rouge_score = 0
+    
+    # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
         
-        rouge_score.update(y_pred, y_str)
         sources_list.extend(x_str)
         sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
@@ -175,14 +192,15 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         y_str = [[y_sentence] for y_sentence in y_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
+        cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
         
-        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, rouge_score.compute()["rougeL_fmeasure"]))
+        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, cur_rouge_score))
         
         # break
-        
-    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(bleu_score.compute(),  rouge_score.compute()["rougeL_fmeasure"]))
     
-    return float(bleu_score.compute()), float(rouge_score.compute()["rougeL_fmeasure"]), (sources_list, sentences_target, sentences_pred)
+    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(cur_bleu_score, cur_rouge_score))
+    
+    return float(cur_bleu_score), float(cur_rouge_score), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0

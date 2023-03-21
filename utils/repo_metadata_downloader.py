@@ -47,17 +47,23 @@ if __name__ == "__main__":
             "status" : STATUS_ENUM["PENDING"]
         })
 
-        res : requests.Response = requests.get(url, timeout=5)        
-        while res.status_code == 403:
-            sleeping_time = TIME_SLEEP
-            while sleeping_time > 0:
-                pb.set_postfix_str(f"{full_name} - SLEEPING... ({sleeping_time})")
-                time.sleep(1)
-                sleeping_time -= 1
-            res : requests.Response = requests.get(url, timeout=5)        
-            continue
+        try:
+            res : requests.Response = requests.get(url, timeout=5)
         
-        if (res.status_code != 200):
+            while res.status_code == 403:
+                sleeping_time = TIME_SLEEP
+                while sleeping_time > 0:
+                    pb.set_postfix_str(f"{full_name} - SLEEPING... ({sleeping_time})")
+                    time.sleep(1)
+                    sleeping_time -= 1
+                res : requests.Response = requests.get(url, timeout=5)        
+                continue
+            
+            if (res.status_code != 200):
+                continue
+        
+        except:
+            repo_metadata_db.delete_one({"_id" : doc.inserted_id})
             continue
         
         body = res.json()
