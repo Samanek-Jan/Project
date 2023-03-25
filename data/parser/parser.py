@@ -16,8 +16,8 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-IN_FOLDER = "../../../data/raw"
-TRAIN_RATIO = 0.8
+IN_FOLDER = "/tmp/xsaman02/raw"
+TRAIN_RATIO = 0.85
 
 class Parser:
 
@@ -97,7 +97,7 @@ class Parser:
         clean_content = ""
         for line in lines:
             if remove_namespaces:
-                match = namespace_r.search(line)
+                match = namespace_r.search(line, endpos=300)
                 while match is not None:
                     line = line.replace(match[1], "")
                     match = namespace_r.search(line)
