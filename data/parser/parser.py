@@ -315,19 +315,20 @@ class Parser:
                         "start_idx" : content_idx,
                     }
                 
-                if cuda_header is not None and found_cuda_header and (start_body_idx := line.find("{")) != -1:
-                    end_header_idx = content_idx + start_body_idx
-                    cuda_header["end_idx"] = end_header_idx
-                    
-                    # Cropping header by the const suffixes
-                    kernel_header = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
-                    end_header_idx = kernel_header.rfind(")")
-                    if end_header_idx != -1: # Should always be true
-                        kernel_header = kernel_header[:end_header_idx+1]
-                    
-                    cuda_header["header"] = kernel_header
-                    cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
-                    cuda_headers.append(cuda_header)
+                if cuda_header is not None and (start_body_idx := line.find("{")) != -1:
+                    if found_cuda_header:                        
+                        end_header_idx = content_idx + start_body_idx
+                        cuda_header["end_idx"] = end_header_idx
+                        
+                        # Cropping header by the const suffixes
+                        kernel_header = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                        end_header_idx = kernel_header.rfind(")")
+                        if end_header_idx != -1: # Should always be true
+                            kernel_header = kernel_header[:end_header_idx+1]
+                        
+                        cuda_header["header"] = kernel_header
+                        cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
+                        cuda_headers.append(cuda_header)
 
                     found_cuda_header = False                        
                     cuda_header = None
