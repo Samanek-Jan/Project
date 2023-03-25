@@ -90,18 +90,25 @@ class Parser:
             content = fd.read()
             return self.__process_str(content, os.path.split(filename)[1])
     
-    def remove_namespaces(self, content : str, exceptions=set(["std"])):
+    def remove_namespaces_and_tags(self, content : str, remove_namespaces=True, remove_tags=True):
         lines = content.splitlines(keepends=True)
-        r = re.compile("((\S+)::)")
+        namespace_r = re.compile("((\S+)::)")
+        tag_r = re.compile("(<\/?\S{1,20}\/?>)")
         clean_content = ""
         for line in lines:
-            match = r.match(line)
-            while match is not None:
-                if match[1] not in exceptions:
-                    line = line.replace(match[0], "")
-                match = r.match(line)
+            if remove_namespaces:
+                match = namespace_r.search(line)
+                while match is not None:
+                    line = line.replace(match[1], "")
+                    match = namespace_r.search(line)
+            
+            if remove_tags:
+                match = tag_r.search(line)
+                while match is not None:
+                    line = line.replace(match[1], "")
+                    match = tag_r.search(line)
                 
-            clean_content += line
+            clean_content += line.rstrip()
 
         return clean_content    
     
@@ -125,9 +132,9 @@ class Parser:
                 continue
             
             kernels.append({
-                "comment"               : self.remove_namespaces(comment),
-                "header"                : self.remove_namespaces(cuda_header["header"]),
-                "body"                  : self.remove_namespaces(body),
+                "comment"               : self.remove_namespaces_and_tags(comment),
+                "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"])),
+                "body"                  : self.remove_namespaces_and_tags(body, remove_tags=False),
                 "kernel_name"           : cuda_header["kernel_name"],
                 "type"                  : "function",
                 "is_from_cuda_file"     : self.is_current_file_gpu,
@@ -160,31 +167,42 @@ class Parser:
         lines = content.splitlines()
         include_re = r"^\s*#include\s*(<|\")\s*(\S+)\s*(\"|>)\s*$"
         define_re = r"^\s*#define\s+(\S+)\s+(.+)$"
-        global_var_re = r"^(.+)(?:(\s+(\S+))\s*)\s*;\s*$"
+        using_alias_re = r"^\s*using\s+(\S+)\s*=\s*.+$"
         global_var_with_val_re = r"^(\S.+)(?:(\s+(\S+))\s*=)(.+)\s*;\s*$"
         
         for i, line in enumerate(lines, 1):
             if (match := re.match(include_re, line)):
                 includes.append({
-                    "full_line" : self.remove_namespaces(match[0]),
-                    "is_custom_include" : True if match[1] == "\"" else False,
-                    "include_name" : self.remove_namespaces(match[2].strip()),
+                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "include_name" : self.remove_namespaces_and_tags(match[2].strip()),
                     "line" : i
                 })
             elif (match := re.match(define_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces(match[0]),
+                    "full_line" : self.remove_namespaces_and_tags(match[0]),
                     "name" : match[1].strip(),
                     "value" : match[2].strip(),
-                    "line" : i
+                    "line" : i,
+                    "type" : "define"
+                })
+            elif (match := re.match(using_alias_re, line)):
+                if line.rfind(";") == -1:
+                    continue
+                global_vars.append({
+                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "name" : match[1].strip(),
+                    "value" : None,
+                    "line" : i,
+                    "type" : "using_alias"
                 })
             elif (match := re.match(global_var_with_val_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces(match[0]),
-                    "type" : self.remove_namespaces(match[1].strip()),
-                    "name" : self.remove_namespaces(match[3].strip().lstrip("*").lstrip("&")),
+                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    # "type" : self.remove_namespaces_and_tags(match[1].strip()),
+                    "name" : self.remove_namespaces_and_tags(match[3].strip().lstrip("*").lstrip("&")),
                     "value" : match.group(4).strip(),
-                    "line" : i
+                    "line" : i,
+                    "type" : "global_variable"
                 })
             # elif (match := re.match(global_var_re, line)):
             #     global_vars.append({
@@ -267,7 +285,7 @@ class Parser:
     
     def __get_kernel_name(self, header : str):
         copy_header = header.replace("\n", " ")
-        r = re.compile("(?:(.+)\()")
+        r = re.compile("(?:([^\(]+)\()")
         res = r.match(copy_header)
         if res is None:
             raise ValueError("parser.__get_kernel_name: Could not parse kernel name")
@@ -276,35 +294,49 @@ class Parser:
     
     def __get_cuda_headers(self, content : str) -> List:
         cuda_prefix_function_regex = r"(__device__|__host__|__global__)+"
-        template_regex = r"^\s*template\s*<.+>\s*$"
-        lines = content.splitlines()
+        template_regex = r"^\s*template\s*<"
+        lines = content.splitlines(keepends=True)
         cuda_headers = []
+        
+        found_cuda_header = False
         
         content_idx = 0
         cuda_header = None
-        for i, line in enumerate(lines):
-            if cuda_header != None or re.match(cuda_prefix_function_regex, line):
-                if cuda_header is None and i > 0 and re.match(template_regex, lines[i-1].strip()):
-                    start_header_idx = content_idx - len(lines[i-1]) - 1
-                    cuda_header = {
-                        "start_idx" : start_header_idx,
-                    }
-                elif cuda_header is None:
+        for line in lines:
+            template_res = None
+            header_res = None
+            
+            if (cuda_header is not None and found_cuda_header) or (header_res := re.match(cuda_prefix_function_regex, line)) or (template_res := re.match(template_regex, line)):
+                if not found_cuda_header and header_res:
+                    found_cuda_header = True
+                
+                if cuda_header is None and (template_res or header_res):                    
                     cuda_header = {
                         "start_idx" : content_idx,
-                    }  
+                    }
                 
-                if cuda_header is not None and (start_body_idx := line.find("{")) != -1:
+                if cuda_header is not None and found_cuda_header and (start_body_idx := line.find("{")) != -1:
                     end_header_idx = content_idx + start_body_idx
                     cuda_header["end_idx"] = end_header_idx
-                    cuda_header["header"] = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                    
+                    # Cropping header by the const suffixes
+                    kernel_header = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                    end_header_idx = kernel_header.rfind(")")
+                    if end_header_idx != -1: # Should always be true
+                        kernel_header = kernel_header[:end_header_idx+1]
+                    
+                    cuda_header["header"] = kernel_header
                     cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
                     cuda_headers.append(cuda_header)
+
+                    found_cuda_header = False                        
                     cuda_header = None
+                    
                 elif cuda_header is not None and line.find(";") != -1:
+                    found_cuda_header = False                        
                     cuda_header = None
                 
-            content_idx += len(line)+1 # plus newline
+            content_idx += len(line)
                 
         return cuda_headers
     
@@ -372,19 +404,35 @@ class Parser:
                 comment.append(line.strip())
                 comment_idx -= (len(line) + 1)
             comment.append(line.strip())
-            return "\n".join(self.__transform_comment(comment[::-1]))
+            return "\n".join(self.__clean_comment(comment[::-1]))
         
-        return "\n".join(self.__transform_comment(comment[::-1]))
+        return "\n".join(self.__clean_comment(comment[::-1]))
     
-    def __transform_comment(self, comment : List[str]) -> List[str]:
+    def __clean_comment(self, comment : List[str]) -> List[str]:
 
-        transformer_comment = []
+        cleaned_comment = []
         for line in comment:
-            for i, c in enumerate(line):
-                if c.isalnum():
-                    transformer_comment.append("// " + line[i:].strip())
+            i = 0
+            while i < len(line):
+                c = line[i]
+                # Delete tags in the beginning of the line
+                if c == "<" and (r := line.find(">", i, i+10)) != -1:
+                    i = r
+                
+                elif c.isalnum():
+                    cleaned_comment.append("// " + line[i:].strip())
                     break
-        return transformer_comment
+                
+                i += 1
+        return cleaned_comment
+    
+    def __clean_header(self, header : str) -> str:        
+        clean_header = header.replace("  ", "")
+        while clean_header != header:
+            header = clean_header
+            clean_header = header.replace("  ", " ")
+        
+        return clean_header
         
         
     def __get_line(self, content : str, start_idx : int) -> str:
@@ -402,7 +450,7 @@ class Parser:
         bracket_sum = 0
         d = {"{" : 1, "}" : -1}
         
-        for i, c in enumerate(line[:-1]):
+        for i, c in enumerate(line):
             if c == "/" and not is_in_comment_block:
                 if line[i+1] == "/":
                     return bracket_sum

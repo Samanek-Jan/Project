@@ -32,9 +32,6 @@ validation_db.create_index("validation.compiled")
 files_metadata_db.create_index("filename")
 files_metadata_db.create_index("repo_name")
 
-
-queried_kernel_ids = set()
-
 TMP_FILE = "cuda_test_file.cu"
 
 def get_nvcc_version():
@@ -81,7 +78,7 @@ def compile(file_content):
     
 def analyze_error(error_output : str) -> Dict:
     error_lines = error_output.splitlines()
-    missing_token_re_list = [r".*identifier \"(\S+)\" is undefined.*"]
+    missing_token_re_list = [r".*identifier \"(\S+)\" is undefined.*", r".*cannot determine which instance of overloaded function \"(\S+)\" is intended.*"]
     wrong_val_re_list = [r".*value of type \"(.+)\" cannot be used to initialize an entity of type \"(.+)\".*"]
     syntax_error_re_list = [r".*expected a \"\S+\"", r".*unrecognized token.*", r".*return value type does not match the function type.*"]
     missing_type_re_list = [r".*explicit type is missing.*", r".*type name is not allowed.*"]
@@ -95,9 +92,12 @@ def analyze_error(error_output : str) -> Dict:
         "include_errors" : []
     }
     
+    missing_tokens_set = set()
+    
     for i, line in enumerate(error_lines, 1):
         for regex in missing_token_re_list:
-            if res := re.match(regex, line):
+            if res := re.match(regex, line) and res[1] not in missing_tokens_set:
+                missing_tokens_set.add(res[1])
                 error_analysis["missing_tokens"].append({
                     "line" : line,
                     "line_idx" : i,
@@ -160,7 +160,7 @@ def analyze_error(error_output : str) -> Dict:
     
     return error_analysis
 
-def apply_error_patch(error_analysis : Dict, file_metadata : Dict):    
+def apply_error_patch(error_analysis : Dict, file_metadata : Dict, queried_kernel_ids : set):    
     # if error_analysis["syntax_errors"]:
     #     return None, False
     
@@ -177,31 +177,28 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict):
             if token_name in searched_tokens:
                 continue
             searched_tokens.add(token_name)
-            proposal = search_global_vars(token_name, file_metadata)
-            if proposal is not None:
-                tokens_content = f"{proposal}\n\n{tokens_content}"
-                continue
-            
-            proposal = search_db(token_name, file_metadata["repo_name"])
-            if proposal is not None:
-                tokens_content = f"{proposal}\n\n{tokens_content}"
-                continue
-            
+            # Try to search in file and connected libraries            
             proposal = search_custom_libs(token_name, file_metadata)
+            if proposal is not None:
+                tokens_content = f"{proposal}\n\n{tokens_content}"
+                continue
+            
+            # Try to search DB for same-named kernel
+            proposal = search_db(token_name, file_metadata["repo_name"], queried_kernel_ids)
             if proposal is not None:
                 tokens_content = f"{proposal}\n\n{tokens_content}"
                 continue
     
     if tokens_content == "":
-        third_party_libs, _ = get_third_party_libraries(file_metadata)
-        tokens_content = "\n".join(third_party_libs)
+        third_party_libs_set = get_third_party_libraries(file_metadata)
+        tokens_content = "\n".join(third_party_libs_set)
         return tokens_content if tokens_content != "" else None, False
     else:
-        remove_namespaces = Parser().remove_namespaces
-        return remove_namespaces(tokens_content), True
+        remove_namespaces = Parser().remove_namespaces_and_tags
+        return remove_namespaces(tokens_content, remove_tags=False), True
             
 
-def search_custom_library_for_token(token_name : str, custom_metadata : dict, searched_libs : set = set()):
+def search_library_for_token(token_name : str, custom_metadata : dict, searched_libs : set = set()):
     for global_var in custom_metadata["global_vars"]:
         if token_name == global_var["name"]:
             return global_var["full_line"], searched_libs
@@ -210,38 +207,37 @@ def search_custom_library_for_token(token_name : str, custom_metadata : dict, se
     if proposal is not None:
         return proposal, searched_libs
         
-    custom_libraries = list(files_metadata_db.find({"repo_name" : custom_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in custom_metadata["includes"] if include["is_custom_include"]]}}))
+    libraries = files_metadata_db.find({"repo_name" : custom_metadata["repo_name"], "filename" : {"$in" : [include["include_name"].split("/")[-1] for include in custom_metadata["includes"]]}})
     
-    for custom_library in custom_libraries:
-        if custom_library["filename"] in searched_libs:
+    for library in libraries:
+        if str(library["_id"]) in searched_libs:
             continue
-        searched_libs.add(custom_library["filename"])
-        proposal, sub_searched_libs = search_custom_library_for_token(token_name, custom_library, searched_libs)
+        searched_libs.add(str(library["_id"]))
+        proposal, sub_searched_libs = search_library_for_token(token_name, library, searched_libs)
         searched_libs.update(sub_searched_libs)
         if proposal is not None:
             return proposal, searched_libs
     
     return None, searched_libs
+             
 
-
-def get_third_party_libraries(custom_library : dict, searched_libs : set = set()):
-    third_party_libraries = []
-    for library in custom_library["includes"]:
-        if library["include_name"].split("/")[-1] in searched_libs:
+def get_third_party_libraries(file_metadata : dict):
+    repo_name = file_metadata["repo_name"]
+    libraries : set = set()
+    for library in file_metadata["includes"]:
+        if library["include_name"].split("/")[-1] in libraries:
             continue
         
-        if library["is_custom_include"]:
-            library = files_metadata_db.find_one({"repo_name" : custom_library["repo_name"], "filename" : library["include_name"].split("/")[-1]})
-            if library is None:
-                continue
-            searched_libs.update([library["filename"]])
-            third_party_libs_addon, searched_libs_addon = get_third_party_libraries(library, searched_libs)
-            third_party_libraries.extend(third_party_libs_addon)
-            searched_libs.update(searched_libs_addon)
+        custom_libs = [*list(train_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1]})) \
+                      ,*list(validation_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1]}))]
+        if len(custom_libs) == 0:
+            libraries.add(library["include_name"].split("/")[-1])
         else:
-            third_party_libraries.append(library["full_line"].strip())
+            for custom_lib in custom_libs:
+                libraries.update(get_third_party_libraries(custom_lib))
     
-    return list(set(third_party_libraries)), searched_libs
+    return libraries
+    
 
     
 def search_full_text(token_name : str, file_metadata : dict) -> str:
@@ -294,30 +290,14 @@ def search_full_text(token_name : str, file_metadata : dict) -> str:
                     break
                 proposal.append(j_line)
             
-            return Parser().remove_namespaces("\n".join(proposal))
-    return None
-
-def search_global_vars(token_name : str, file_metadata : dict):
-    # 1. Try to find missing token in file global vars        
-    for global_var in file_metadata["global_vars"]:
-        if token_name == global_var["name"]:
-            return global_var["full_line"]
-            
+            return Parser().remove_namespaces_and_tags("\n".join(proposal))
     return None
 
 def search_custom_libs(token_name : str, file_metadata : dict):
-    proposal, _ = search_custom_library_for_token(token_name, file_metadata)
-    # custom_libraries = list(files_metadata_db.find({"repo_name" : file_metadata["repo_name"], "filename" : {"$in" : [include["include_name"] for include in file_metadata["includes"] if include["is_custom_include"]]}}))
-    
-    # # 2. Search for missing token in included custom libraries
-    # for custom_library in custom_libraries:
-    #     proposal, _ = search_custom_library_for_token(token_name, custom_library)
-    #     if proposal is not None:
-    #         return proposal
-        
+    proposal, _ = search_library_for_token(token_name, file_metadata)
     return proposal
 
-def search_db(token_name : str, repo_name : str):
+def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
     global compiled
     global not_compiled
     
@@ -329,7 +309,7 @@ def search_db(token_name : str, repo_name : str):
         elif str(kernel["_id"]) not in queried_kernel_ids:
             queried_kernel_ids.add(str(kernel["_id"]))
             
-            validation_result = validate_kernel(kernel)
+            validation_result = validate_kernel(kernel, queried_kernel_ids)
             validation_result["nvcc_info"] = nvcc_info
             
             new_vals = {
@@ -353,7 +333,7 @@ def search_db(token_name : str, repo_name : str):
             return "{}\n{}".format(kernel["header"], kernel["body"])
         elif str(kernel["_id"]) not in queried_kernel_ids:
             queried_kernel_ids.add(str(kernel["_id"]))
-            validation_result = validate_kernel(kernel)
+            validation_result = validate_kernel(kernel, queried_kernel_ids)
             validation_result["nvcc_info"] = nvcc_info
             if validation_result["compiled"]:
                 compiled += 1
@@ -371,10 +351,14 @@ def search_db(token_name : str, repo_name : str):
                 return None
     return None
              
-def validate_kernel(kernel : Dict) -> Dict:
+def validate_kernel(kernel : Dict, queried_kernel_ids : set = set()) -> Dict:
 
     kernel_str = "\n{}{}\n".format(kernel["header"], kernel["body"])
     additional_content = """
+#include <cstdint>
+
+using namespace std;
+
 int main() {
     return 0;
 }"""
@@ -413,7 +397,7 @@ int main() {
             kernel_validation["compiled"] = True
             break
                 
-        patch_proposal, found = apply_error_patch(error_analyses, metadata)
+        patch_proposal, found = apply_error_patch(error_analyses, metadata, queried_kernel_ids)
         if found == True or (not applied_third_party_libs and patch_proposal is not None):
             if not found:
                 applied_third_party_libs = True
