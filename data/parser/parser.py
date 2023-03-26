@@ -16,8 +16,8 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-IN_FOLDER = "../../../data/raw"
-TRAIN_RATIO = 0.8
+IN_FOLDER = "/tmp/xsaman02/raw"
+TRAIN_RATIO = 0.85
 
 class Parser:
 
@@ -133,10 +133,20 @@ class Parser:
             if body == "":
                 continue
             
+            # Get start space indent
+            start_space_indent_size = 0
+            for c in cuda_header["header"]:
+                if c == " ":
+                    start_space_indent_size += 1
+                elif c == "\t":
+                    start_space_indent_size += 2
+                else:
+                    break
+            
             kernels.append({
                 "comment"               : self.remove_namespaces_and_tags(comment),
                 "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"])),
-                "body"                  : self.remove_namespaces_and_tags(body, remove_tags=False),
+                "body"                  : self.__clean_body(self.remove_namespaces_and_tags(body, remove_tags=False), start_space_indent_size),
                 "kernel_name"           : cuda_header["kernel_name"],
                 "type"                  : "function",
                 "is_from_cuda_file"     : self.is_current_file_gpu,
@@ -152,7 +162,7 @@ class Parser:
     
     def __get_file_metadata(self, content : str, filename : str):
         file_metadata = {
-            "filename" : filename,
+            "filename" : filename.split("/")[-1],
         }
     
         includes, global_vars = self.__get_includes_and_global_vars(content)
@@ -175,13 +185,13 @@ class Parser:
         for i, line in enumerate(lines, 1):
             if (match := re.match(include_re, line)):
                 includes.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
                     "include_name" : self.remove_namespaces_and_tags(match[2].strip()),
                     "line" : i
                 })
             elif (match := re.match(define_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
                     "name" : match[1].strip(),
                     "value" : match[2].strip(),
                     "line" : i,
@@ -199,12 +209,12 @@ class Parser:
                 })
             elif (match := re.match(global_var_with_val_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
                     # "type" : self.remove_namespaces_and_tags(match[1].strip()),
                     "name" : self.remove_namespaces_and_tags(match[3].strip().lstrip("*").lstrip("&")),
                     "value" : match.group(4).strip(),
                     "line" : i,
-                    "type" : "global_variable"
+                    "type" : "global_var"
                 })
             # elif (match := re.match(global_var_re, line)):
             #     global_vars.append({
@@ -376,18 +386,7 @@ class Parser:
             i += len(line)
             
         return body
-    
-    def line_start_with(self, content : str, idx : int) -> bool:
-        while idx > 0:
-            idx -= 1
-            if content[idx] == "\n":
-                return True
-            elif content[idx].isalnum():
-                return False
-            
-        return True
  
-            
     def __get_line_back(self, content: str, end_idx : int) -> str:
         start_idx = end_idx
         while start_idx > 0:
@@ -436,15 +435,35 @@ class Parser:
                 
                 i += 1
         return cleaned_comment
+
+    def __clean_header(self, header : str) -> str: 
+        return self.__adjust_indent(header)       
     
-    def __clean_header(self, header : str) -> str:        
-        clean_header = header.replace("  ", "")
-        while clean_header != header:
-            header = clean_header
-            clean_header = header.replace("  ", " ")
+    def __clean_body(self, body : str, start_space_indent : int) -> str:
+        return self.__adjust_indent(body, start_space_indent)
+
+    def __adjust_indent(self, content : str, start_space_indent : int = 0):
+        content_lines = content.splitlines()
+        if content_lines == []:
+            return content_lines
         
-        return clean_header
+        cleaned_content_lines = []
+        transform_tab_to_spaces = lambda line: line.replace("\t", "  ")
         
+        # if start_space_indent is None:
+        #     first_line = transform_tab_to_spaces(content_lines[0])
+        #     start_space_indent = len(first_line) - len(first_line.lstrip())
+        
+        for line in content_lines:
+            line = transform_tab_to_spaces(line).rstrip()
+            space_indent_size = len(line) - len(line.lstrip())
+            if space_indent_size > start_space_indent:
+                line = " " * (space_indent_size - start_space_indent) + line.lstrip()
+            else:
+                line = " " * (space_indent_size + start_space_indent) + line.lstrip()
+            cleaned_content_lines.append(line)
+        
+        return "\n".join(cleaned_content_lines)
         
     def __get_line(self, content : str, start_idx : int) -> str:
         end_idx = start_idx
