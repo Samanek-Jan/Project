@@ -16,7 +16,8 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-IN_FOLDER = "/tmp/xsaman02/raw"
+# IN_FOLDER = "/tmp/xsaman02/raw"
+IN_FOLDER = "../../../data/raw"
 TRAIN_RATIO = 0.85
 
 class Parser:
@@ -145,7 +146,7 @@ class Parser:
             
             kernels.append({
                 "comment"               : self.remove_namespaces_and_tags(comment),
-                "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"])),
+                "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"]), start_space_indent_size),
                 "body"                  : self.__clean_body(self.remove_namespaces_and_tags(body, remove_tags=False), start_space_indent_size),
                 "kernel_name"           : cuda_header["kernel_name"],
                 "type"                  : "function",

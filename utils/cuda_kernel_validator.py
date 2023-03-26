@@ -96,7 +96,7 @@ def analyze_error(error_output : str) -> Dict:
     
     for i, line in enumerate(error_lines, 1):
         for regex in missing_token_re_list:
-            if res := re.match(regex, line) and res[1] not in missing_tokens_set:
+            if (res := re.match(regex, line)) and res[1] not in missing_tokens_set:
                 missing_tokens_set.add(res[1])
                 error_analysis["missing_tokens"].append({
                     "line" : line,
