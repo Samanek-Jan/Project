@@ -16,18 +16,20 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-IN_FOLDER = "/tmp/xsaman02/raw"
-TRAIN_RATIO = 0.85
+IN_FOLDER = "../../../data/raw"
+TRAIN_RATIO = 0.8
 
 class Parser:
 
     def __init__(self):
         
-        self.bracket_counter      : int                = 0
-        self.parsed_object_list   : List               = []
-        self.is_current_file_gpu  : bool               = False
-        self.is_parsing_comment   : bool               = False
-        self.filename             : str                = ""
+        self.bracket_counter                            : int   = 0
+        self.parsed_object_list                         : List  = []
+        self.is_current_file_gpu                        : bool  = False
+        self.is_parsing_comment                         : bool  = False
+        self.filename                                   : str   = "",
+        self.searched_cuda_header_token_substitutions   : dict  = {"__DH__" : "__device____host__", "__dh__" : "__device____host__"}
+        self.searched_cuda_header_token_set             : set   = set(["__device__", "__host__", "__global__", *self.searched_cuda_header_token_substitutions.keys()])
         
 
     def process_file(self, filename : str) -> List:
@@ -241,28 +243,35 @@ class Parser:
         for param in params:
             param = param.split(" ")
             param_name = param[-1]
-            params_dict[param_name] = "".join(param[:-1])
+            if param_name != "":
+                params_dict[param_name] = "".join(param[:-1])
         return params_dict
     
     def __generate_default_comment(self, header : str) -> str:
         
         # Get kernel name
         oneline_header = header.replace("\n", " ")
-        non_templated_kernel_header = r"^\s*(__.+__)\s+(.+)\s+(\S+)\s*\((.*)\).*"
-        templated_kernel_header = r"^\s*template\s*<(.+)>\s*(__.+__)\s+(.+)\s+(\S+)\s*\((.*)\).*"
+        non_templated_kernel_header = r"^\s*(\S+\s)*\s*(__.+__\s*)+\s+(.+)\s+(\S+)\s*\((.*)\).*"
+        templated_kernel_header = r"^\s*template\s*<(.*)>\s*(\S+\s)*\s*(__.+__\s*)+\s+(.+)\s+(\S+)\s*\((.*)\).*"
+        templated_kernel_header2 = r"^\s*template\s*<(.*)>\s*(\S+\s)*\s*(.+)\s+(__.+__\s*)+\s+(\S+)\s*\((.*)\).*"
+        
         
         description_call_set = ["Function", "Method", "Kernel"]
         description_template_call_set = ["Templated", "Generic"]
         
-        res = re.search(non_templated_kernel_header, oneline_header)
-        if (res):
-            splitted_name = self.__split_name(res[3])
-            params_dict = self.__parse_header_params(res[4])
-            generated_comment = "// {} for {}\n".format(random.choice(description_call_set), " ".join(splitted_name))
-            return_type = res[2]
-        elif (res := re.search(templated_kernel_header, oneline_header)):
+        if (res := re.match(non_templated_kernel_header, oneline_header)):
             splitted_name = self.__split_name(res[4])
             params_dict = self.__parse_header_params(res[5])
+            generated_comment = "// {} for {}\n".format(random.choice(description_call_set), " ".join(splitted_name))
+            return_type = res[3]
+        elif (res := re.match(templated_kernel_header, oneline_header)):
+            splitted_name = self.__split_name(res[5])
+            params_dict = self.__parse_header_params(res[6])
+            return_type = res[4]
+            generated_comment = "// {}{} for {}\n".format(random.choice(description_template_call_set) + " " if random.random() < 0.5 else "", random.choice(description_call_set), " ".join(splitted_name))
+        elif (res := re.match(templated_kernel_header2, oneline_header)):
+            splitted_name = self.__split_name(res[5])
+            params_dict = self.__parse_header_params(res[6])
             return_type = res[3]
             generated_comment = "// {}{} for {}\n".format(random.choice(description_template_call_set) + " " if random.random() < 0.5 else "", random.choice(description_call_set), " ".join(splitted_name))
             
@@ -288,13 +297,13 @@ class Parser:
         r = re.compile("(?:([^\(]+)\()")
         res = r.match(copy_header)
         if res is None:
-            raise ValueError("parser.__get_kernel_name: Could not parse kernel name")
+            raise ValueError(f"parser.__get_kernel_name: Could not parse kernel name. Header: {header}")
         
         return res[1].split(" ")[-1].strip()
     
     def __get_cuda_headers(self, content : str) -> List:
-        cuda_prefix_function_regex = r"(__device__|__host__|__global__)+"
-        template_regex = r"^\s*template\s*<"
+        cuda_prefix_function_regex = re.compile("({})+".format("|".join(self.searched_cuda_header_token_set)))
+        template_regex = re.compile("^\s*template\s*<")
         lines = content.splitlines(keepends=True)
         cuda_headers = []
         
@@ -306,7 +315,7 @@ class Parser:
             template_res = None
             header_res = None
             
-            if (cuda_header is not None and found_cuda_header) or (header_res := re.match(cuda_prefix_function_regex, line)) or (template_res := re.match(template_regex, line)):
+            if (cuda_header is not None and found_cuda_header) or (header_res := cuda_prefix_function_regex.search(line, endpos=300)) or (template_res := re.match(template_regex, line)):
                 if not found_cuda_header and header_res:
                     found_cuda_header = True
                 
@@ -315,27 +324,28 @@ class Parser:
                         "start_idx" : content_idx,
                     }
                 
-                if cuda_header is not None and (start_body_idx := line.find("{")) != -1:
-                    if found_cuda_header:                        
-                        end_header_idx = content_idx + start_body_idx
-                        cuda_header["end_idx"] = end_header_idx
-                        
-                        # Cropping header by the const suffixes
-                        kernel_header = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
-                        end_header_idx = kernel_header.rfind(")")
-                        if end_header_idx != -1: # Should always be true
-                            kernel_header = kernel_header[:end_header_idx+1]
-                        
-                        cuda_header["header"] = kernel_header
-                        cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
-                        cuda_headers.append(cuda_header)
-
-                    found_cuda_header = False                        
-                    cuda_header = None
+            if cuda_header is not None and (start_body_idx := line.find("{")) != -1:
+                end_header_idx = content_idx + start_body_idx
+                cuda_header["end_idx"] = end_header_idx
+                if found_cuda_header:                                                
+                    # Cropping header by the const suffixes
+                    kernel_header = content[cuda_header["start_idx"]:cuda_header["end_idx"]]
+                    end_header_idx = kernel_header.rfind(")")
+                    if end_header_idx != -1: # Should always be true
+                        kernel_header = kernel_header[:end_header_idx+1]
+                    for substitution, val in self.searched_cuda_header_token_substitutions.items():
+                        kernel_header = kernel_header.replace(substitution, val)
                     
-                elif cuda_header is not None and line.find(";") != -1:
-                    found_cuda_header = False                        
-                    cuda_header = None
+                    cuda_header["header"] = kernel_header
+                    cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
+                    cuda_headers.append(cuda_header)
+                    
+                found_cuda_header = False                        
+                cuda_header = None
+                    
+            elif cuda_header is not None and line.find(";") != -1:
+                found_cuda_header = False                        
+                cuda_header = None
                 
             content_idx += len(line)
                 
