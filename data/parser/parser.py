@@ -16,8 +16,8 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-# IN_FOLDER = "/tmp/xsaman02/raw"
-IN_FOLDER = "../../../data/raw"
+IN_FOLDER = "/tmp/xsaman02/raw"
+# IN_FOLDER = "../../../data/raw"
 TRAIN_RATIO = 0.85
 
 class Parser:
@@ -111,9 +111,9 @@ class Parser:
                     line = line.replace(match[1], "")
                     match = tag_r.search(line)
                 
-            clean_content += line.rstrip()
+            clean_content += line.rstrip() + "\n"
 
-        return clean_content    
+        return clean_content
     
     def __process_str(self, content : str, filename : str) -> List:
         
@@ -443,7 +443,7 @@ class Parser:
     def __clean_body(self, body : str, start_space_indent : int) -> str:
         return self.__adjust_indent(body, start_space_indent)
 
-    def __adjust_indent(self, content : str, start_space_indent : int = 0):
+    def __adjust_indent(self, content : str, start_space_indent : int = None):
         content_lines = content.splitlines()
         if content_lines == []:
             return content_lines
@@ -451,9 +451,9 @@ class Parser:
         cleaned_content_lines = []
         transform_tab_to_spaces = lambda line: line.replace("\t", "  ")
         
-        # if start_space_indent is None:
-        #     first_line = transform_tab_to_spaces(content_lines[0])
-        #     start_space_indent = len(first_line) - len(first_line.lstrip())
+        if start_space_indent is None:
+            first_line = transform_tab_to_spaces(content_lines[0])
+            start_space_indent = len(first_line) - len(first_line.lstrip())
         
         for line in content_lines:
             line = transform_tab_to_spaces(line).rstrip()
