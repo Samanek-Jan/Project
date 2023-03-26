@@ -31,8 +31,8 @@ class Parser:
         self.filename                                   : str   = "",
         self.searched_cuda_header_token_substitutions   : dict  = {"__DH__" : "__device____host__", "__dh__" : "__device____host__"}
         self.searched_cuda_header_token_set             : set   = set(["__device__", "__host__", "__global__", *self.searched_cuda_header_token_substitutions.keys()])
+        self.invalid_kernels                            : list  = []
         
-
     def process_file(self, filename : str) -> List:
         """ Parse and process given file
 
@@ -121,39 +121,47 @@ class Parser:
         cuda_headers = self.__get_cuda_headers(content)
         
         for cuda_header in cuda_headers:
-            end_comment_idx = cuda_header["start_idx"]
-            body_start_idx = cuda_header["end_idx"]
-            
-            comment = self.__parse_comment(content, end_comment_idx)
-            has_generated_comment = False
-            if comment == "":
-                comment = self.__generate_default_comment(cuda_header["header"])
-                has_generated_comment = True
+            try:
+                end_comment_idx = cuda_header["start_idx"]
+                body_start_idx = cuda_header["end_idx"]
                 
-            body = self.__parse_body(content, body_start_idx)
-            if body == "":
-                continue
-            
-            # Get start space indent
-            start_space_indent_size = 0
-            for c in cuda_header["header"]:
-                if c == " ":
-                    start_space_indent_size += 1
-                elif c == "\t":
-                    start_space_indent_size += 2
-                else:
-                    break
-            
-            kernels.append({
-                "comment"               : self.remove_namespaces_and_tags(comment),
-                "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"]), start_space_indent_size),
-                "body"                  : self.__clean_body(self.remove_namespaces_and_tags(body, remove_tags=False), start_space_indent_size),
-                "kernel_name"           : cuda_header["kernel_name"],
-                "type"                  : "function",
-                "is_from_cuda_file"     : self.is_current_file_gpu,
-                "has_generated_comment" : has_generated_comment,
-                "filename"              : filename
-            })
+                comment = self.__parse_comment(content, end_comment_idx)
+                has_generated_comment = False
+                if comment == "":
+                    comment = self.__generate_default_comment(cuda_header["header"])
+                    has_generated_comment = True
+                    
+                body = self.__parse_body(content, body_start_idx)
+                if body == "":
+                    continue
+                
+                # Get start space indent
+                start_space_indent_size = 0
+                for c in cuda_header["header"]:
+                    if c == " ":
+                        start_space_indent_size += 1
+                    elif c == "\t":
+                        start_space_indent_size += 2
+                    else:
+                        break
+                
+                kernels.append({
+                    "comment"               : self.remove_namespaces_and_tags(comment),
+                    "header"                : self.__clean_header(self.remove_namespaces_and_tags(cuda_header["header"]), start_space_indent_size),
+                    "body"                  : self.__clean_body(self.remove_namespaces_and_tags(body, remove_tags=False), start_space_indent_size),
+                    "kernel_name"           : cuda_header["kernel_name"],
+                    "type"                  : "function",
+                    "is_from_cuda_file"     : self.is_current_file_gpu,
+                    "has_generated_comment" : has_generated_comment,
+                    "filename"              : filename
+                })
+            except Exception as e:
+                self.invalid_kernels.append({
+                            "filename" : self.filename,
+                            "exception" : str(e),
+                            "kernel_name" : cuda_header.get("kernel_name"),
+                            "type" : str(type(e))
+                        })
         
         file_metadata = None
         if len(kernels) > 0 or filename.split(".")[-1] in HEADER_FILE_SUFFIXES:
@@ -347,9 +355,16 @@ class Parser:
                     for substitution, val in self.searched_cuda_header_token_substitutions.items():
                         kernel_header = kernel_header.replace(substitution, val)
                     
-                    cuda_header["header"] = kernel_header
-                    cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
-                    cuda_headers.append(cuda_header)
+                    try:
+                        cuda_header["header"] = kernel_header
+                        cuda_header["kernel_name"] = self.__get_kernel_name(cuda_header["header"])
+                        cuda_headers.append(cuda_header)
+                    except Exception as e:
+                        self.invalid_kernels.append({
+                            "filename" : self.filename,
+                            "exception" : str(e),
+                            "type" : str(type(e))
+                        })
                     
                 found_cuda_header = False                        
                 cuda_header = None
@@ -458,10 +473,8 @@ class Parser:
         for line in content_lines:
             line = transform_tab_to_spaces(line).rstrip()
             space_indent_size = len(line) - len(line.lstrip())
-            if space_indent_size > start_space_indent:
+            if space_indent_size >= start_space_indent:
                 line = " " * (space_indent_size - start_space_indent) + line.lstrip()
-            else:
-                line = " " * (space_indent_size + start_space_indent) + line.lstrip()
             cleaned_content_lines.append(line)
         
         return "\n".join(cleaned_content_lines)
@@ -546,15 +559,15 @@ def parse_folder() -> None:
     
     print("Connecting to DB...", end="\r")
     db = get_database()
-    train = db["train"]
-    validation = db["validation"]
-    invalid_files = db["invalid_files"]
-    file_metadatas = db["file_metadata"]
+    train_db = db["train"]
+    validation_db = db["validation"]
+    invalid_kernels_db = db["invalid_kernels"]
+    file_metadatas_db = db["file_metadata"]
     # Start new collections
-    train.drop()
-    validation.drop()
-    invalid_files.drop()
-    file_metadatas.drop()
+    train_db.drop()
+    validation_db.drop()
+    invalid_kernels_db.drop()
+    file_metadatas_db.drop()
 
     parser = Parser()
     
@@ -600,7 +613,7 @@ def parse_folder() -> None:
                     **file_obj
                 }
                 
-                insert_result = file_metadatas.insert_one(file_metadata)
+                insert_result = file_metadatas_db.insert_one(file_metadata)
                 
                 for kernel in kernels:
                     kernel["file_metadata_id"] = str(insert_result.inserted_id)
@@ -612,19 +625,24 @@ def parse_folder() -> None:
                         train_data_counter += 1
                         train_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
                         kernel["index"] = train_document_idx
-                        train.insert_one(kernel)
+                        train_db.insert_one(kernel)
                         train_document_idx += 1
                     else:
                         variable_train_ratio += TRAIN_RATIO
                         valid_data_counter += 1
                         valid_char_counter += len(kernel.get("comment", "") + kernel.get("header", "") + kernel.get("body", ""))
                         kernel["index"] = valid_document_idx
-                        validation.insert_one(kernel)
+                        validation_db.insert_one(kernel)
                         valid_document_idx += 1
 
             except Exception as e:
-                invalid_files.insert_one({"file" : file_obj.get("root_path"), "exception" : str(e)})
-            
+                invalid_kernels_db.insert_one({"file" : file_obj.get("root_path"), "exception" : str(e)})
+        
+        if parser.invalid_kernels != []:
+            invalid_kernels = [{"repo_name" : repo_name, **invalid_kernel} for invalid_kernel in parser.invalid_kernels]
+            invalid_kernels_db.insert_many(invalid_kernels)
+            parser.invalid_kernels.clear()
+        
     print("Train data stats:")
     print("\tTotal data: %d" % train_data_counter)
     print("\tTotal char. len: %d" % train_char_counter)          
