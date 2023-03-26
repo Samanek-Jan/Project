@@ -437,8 +437,8 @@ class Parser:
                 i += 1
         return cleaned_comment
 
-    def __clean_header(self, header : str) -> str: 
-        return self.__adjust_indent(header)       
+    def __clean_header(self, header : str, start_space_indent : int) -> str: 
+        return self.__adjust_indent(header, start_space_indent)       
     
     def __clean_body(self, body : str, start_space_indent : int) -> str:
         return self.__adjust_indent(body, start_space_indent)
