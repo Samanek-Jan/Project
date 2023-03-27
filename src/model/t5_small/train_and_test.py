@@ -10,10 +10,10 @@ import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from src.datasets.config import DEVICE
 from src.datasets.collate_functor import CollateFunctor
-from src.datasets.config import BOS_TOKEN, DEVICE, EOS_TOKEN, MASK_TOKEN, MAX_SEQUENCE_SIZE, PAD_TOKEN
 
-from src.model.t5_small.config import BATCH_SIZE, LR, MODELS_OUT_FOLDER, WARMUP_DURATION
+from src.model.t5_small.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
 from src.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.datasets.local_dataset.local_dataset import LocalDataset
 
@@ -39,26 +39,37 @@ def main():
     global MAX_SEQUENCE_SIZE
     MAX_SEQUENCE_SIZE = configuration.n_positions
     
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, model_max_length=MAX_SEQUENCE_SIZE)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
+    tokenizer.add_special_tokens({
+        "bos_token" : BOS_TOKEN,
+        "eos_token" : EOS_TOKEN,
+        "unk_token" : UNK_TOKEN,
+        "pad_token" : PAD_TOKEN,
+    })
+    # tokenizer.pad_token = PAD_TOKEN
+    # tokenizer.bos_token = BOS_TOKEN
+    # tokenizer.eos_token = EOS_TOKEN
+    # tokenizer.unk_token = UNK_TOKEN
     model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
     model.resize_token_embeddings(len(tokenizer))
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
         
     # Initializing a model from the configuration
+    model_dict = {}
     if args.model is not None:
         model_dict = torch.load(args.model)
         model.load_state_dict(model_dict["model_dict"])
         optimizer.load_state_dict(model_dict["optimizer_dict"])
 
     
-    collate_f = CollateFunctor(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE)
+    collate_f = CollateFunctor(tokenizer)
     
     if pretraining:
-        train_dataset = RemoteDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, args.epoch_size)
-        valid_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "valid")
+        train_dataset = RemoteDataset(tokenizer, args.epoch_size)
+        valid_dataset = LocalDataset(tokenizer, "valid")
     else:
-        train_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "train")
-        valid_dataset = LocalDataset(tokenizer, MAX_SEQUENCE_SIZE, MAX_SEQUENCE_SIZE, "valid")
+        train_dataset = LocalDataset(tokenizer, "train")
+        valid_dataset = LocalDataset(tokenizer, "valid")
         
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_f) # type: ignore
     valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_f) # type: ignore
@@ -66,7 +77,7 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder)
+    train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder, model_d=model_dict)
     print("Done")
 
 
@@ -77,11 +88,12 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 1):
+                   eval_every_n = 1,
+                   model_d = {}):
     
     global pretraining
     
-    best_version = {"bv_BLEU" : float("-inf")}
+    best_version = {"bv_BLEU" : model_d.get("bv_BLEU", float("-inf"))}
     scheduler = transformers.get_constant_schedule_with_warmup(                
             optimizer = optimizer,
             num_warmup_steps = WARMUP_DURATION
@@ -91,10 +103,10 @@ def train_and_test(model,
     bleu_score = torchmetrics.BLEUScore()
     tokenizer = train_dataloader.dataset.datasampler.tokenizer
     
-    loss_list = []
+    loss_list = model_d.get("loss_list", [])
     epoch_loss = []
-    bleu_list = []
-    rouge_list = []
+    bleu_list = model_d.get("bleu_list", [])
+    rouge_list = model_d.get("rouge_list", [])
     
     for epoch in range(1, epoch_n+1):
         pbar = tqdm(iter(train_dataloader), leave=False)
@@ -183,7 +195,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
-        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         
         sources_list.extend(x_str)
         sentences_target.extend(y_str)

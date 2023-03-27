@@ -34,6 +34,6 @@ if __name__ == "__main__":
     print(len(tokenizer))
     x = tokenizer(DATA)
     
-    print(tokenizer.decode(x["input_ids"]))
+    print(tokenizer.batch_decode([x["input_ids"]]))
     
     

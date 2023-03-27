@@ -3,17 +3,14 @@ import torch
 import numpy as np
 import datasets
 import tokenizers
-from src.datasets.tokenizer import CupydTokenizer
-from src.datasets.config import DEVICE, MASK_TOKEN
+from src.datasets.config import DEVICE
 import random
 
 class LocalDataSampler():
     
-    def __init__(self, tokenizer : CupydTokenizer, max_x : int, max_y : int, sampling_type : str = "NSP"):
+    def __init__(self, tokenizer, sampling_type : str = "NSP"):
         self.sampling_type = sampling_type
         self.tokenizer = tokenizer
-        self.max_x = max_x
-        self.max_y = max_y
         
     def __call__(self, kernel):
         if self.sampling_type == "NSP":

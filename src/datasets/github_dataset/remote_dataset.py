@@ -4,17 +4,18 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSeq2SeqLM
+from src.model.t5_small.config import MAX_SEQUENCE_SIZE
 
 from src.datasets.collate_functor import CollateFunctor
-from src.datasets.config import BOS_TOKEN, EOS_TOKEN, MASK_TOKEN, PAD_TOKEN, SAMPLING_TYPES, MAX_SEQUENCE_SIZE
+from src.datasets.config import SAMPLING_TYPES
 from src.datasets.github_dataset.remote_data_sampler import RemoteDataSampler
 
 
 class RemoteDataset(torch.utils.data.Dataset):
     
-    def __init__(self, tokenizer, max_x : int, max_y : int, epoch_len : int, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000):
+    def __init__(self, tokenizer, epoch_len : int, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000):
         
-        self.datasampler = RemoteDataSampler(tokenizer, max_x, max_y, sampling_type)
+        self.datasampler = RemoteDataSampler(tokenizer, sampling_type)
         self.epoch_len = epoch_len
         self.buffer_size = buffer_size
         self.buffer = []

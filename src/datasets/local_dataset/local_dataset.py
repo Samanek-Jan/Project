@@ -4,13 +4,11 @@ import torch
 from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
 from src.datasets.config import SAMPLING_TYPES, mongoDB
 
-from src.datasets.tokenizer import CupydTokenizer
-
 class LocalDataset(torch.utils.data.Dataset):
     
-    def __init__(self, tokenizer, max_x : int, max_y : int, part : str, max_epoch_size : int = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
+    def __init__(self, tokenizer, part : str, max_epoch_size : int = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
         
-        self.datasampler = LocalDataSampler(tokenizer, max_x, max_y, sampling_type)
+        self.datasampler = LocalDataSampler(tokenizer, sampling_type)
         self.buffer_size = buffer_size
         self.shuffle = shuffle
         if part == "train":
