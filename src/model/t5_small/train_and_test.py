@@ -28,7 +28,7 @@ def main():
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
     argument_parser.add_argument("--model_name", "-m", type=str, default="t5-small")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="t5-small")
+    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="Salesforce/codegen-350M-mono")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
