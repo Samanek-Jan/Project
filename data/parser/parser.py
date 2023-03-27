@@ -16,8 +16,8 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-IN_FOLDER = "/tmp/xsaman02/raw"
-# IN_FOLDER = "../../../data/raw"
+# IN_FOLDER = "/tmp/xsaman02/raw"
+IN_FOLDER = "../../../data/raw"
 TRAIN_RATIO = 0.85
 
 class Parser:
@@ -25,7 +25,7 @@ class Parser:
     def __init__(self):
         
         self.bracket_counter                            : int   = 0
-        self.parsed_object_list                         : List  = []
+        self.parsed_object_list                         : list  = []
         self.is_current_file_gpu                        : bool  = False
         self.is_parsing_comment                         : bool  = False
         self.filename                                   : str   = "",
@@ -194,13 +194,13 @@ class Parser:
         for i, line in enumerate(lines, 1):
             if (match := re.match(include_re, line)):
                 includes.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
-                    "include_name" : self.remove_namespaces_and_tags(match[2].strip()),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False).strip(),
+                    "include_name" : self.remove_namespaces_and_tags(match[2].strip()).strip(),
                     "line" : i
                 })
             elif (match := re.match(define_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False).strip(),
                     "name" : match[1].strip(),
                     "value" : match[2].strip(),
                     "line" : i,
@@ -210,7 +210,7 @@ class Parser:
                 if line.rfind(";") == -1:
                     continue
                 global_vars.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0]),
+                    "full_line" : self.remove_namespaces_and_tags(match[0]).strip(),
                     "name" : match[1].strip(),
                     "value" : None,
                     "line" : i,
@@ -218,9 +218,9 @@ class Parser:
                 })
             elif (match := re.match(global_var_with_val_re, line)):
                 global_vars.append({
-                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False),
+                    "full_line" : self.remove_namespaces_and_tags(match[0], remove_tags=False).strip(),
                     # "type" : self.remove_namespaces_and_tags(match[1].strip()),
-                    "name" : self.remove_namespaces_and_tags(match[3].strip().lstrip("*").lstrip("&")),
+                    "name" : self.remove_namespaces_and_tags(match[3].strip().lstrip("*").lstrip("&")).strip(),
                     "value" : match.group(4).strip(),
                     "line" : i,
                     "type" : "global_var"

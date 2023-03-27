@@ -26,3 +26,4 @@ cuda_test_file.cu
 a.out
 data/*
 utils/repo_metadata.json
+test.cu

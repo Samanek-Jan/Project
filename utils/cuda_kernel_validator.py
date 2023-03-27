@@ -1,4 +1,5 @@
 from ast import Dict
+from copy import deepcopy
 from typing import Collection, List, Tuple
 from pymongo import MongoClient
 import sys, os
@@ -14,6 +15,18 @@ import re
 from data.parser.parser import Parser
 
 MAX_ATTEMPTS = 15
+DEFAULT_ADDITIONAL_CONTENT = """
+#include <cstdint>
+
+using namespace std;
+
+int main() {
+    return 0;
+}"""
+
+DEFAULT_ADDITIONAL_CONTENT_LINES_SIZE = len(DEFAULT_ADDITIONAL_CONTENT.splitlines())
+TMP_FILE = "cuda_test_file.cu"
+
 db = MongoClient("mongodb://localhost:27017")["cuda_snippets"]
 train_db = db["train"]
 validation_db = db["validation"]
@@ -32,7 +45,7 @@ validation_db.create_index("validation.compiled")
 files_metadata_db.create_index("filename")
 files_metadata_db.create_index("repo_name")
 
-TMP_FILE = "cuda_test_file.cu"
+already_searched_missing_tokens_stack = []
 
 def get_nvcc_version():
     completedProcess = subprocess.run(["nvcc", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -83,13 +96,15 @@ def analyze_error(error_output : str) -> Dict:
     syntax_error_re_list = [r".*expected a \"\S+\"", r".*unrecognized token.*", r".*return value type does not match the function type.*"]
     missing_type_re_list = [r".*explicit type is missing.*", r".*type name is not allowed.*"]
     inlude_error_re_list = [r".* error: (\S+): No such file or directory.*"]
+    already_defined_error_re_list = [r".* error: variable \"(\S+)\" has already been defined"]
     
     error_analysis = {
         "missing_tokens" : [],
         "wrong_vals" : [],
         "syntax_errors" : [],
         "missing_types" : [],
-        "include_errors" : []
+        "include_errors" : [],
+        "already_defined_errors" : []
     }
     
     missing_tokens_set = set()
@@ -158,6 +173,16 @@ def analyze_error(error_output : str) -> Dict:
                 })
                 break
     
+        for regex in already_defined_error_re_list:
+            if res := re.match(regex, line):
+                error_analysis["already_defined_errors"].append({
+                    "line" : line,
+                    "line_idx" : i,
+                    "error_regex" : regex,
+                    "identifier" : res[1]
+                })
+                break
+    
     return error_analysis
 
 def apply_error_patch(error_analysis : Dict, file_metadata : Dict, queried_kernel_ids : set):    
@@ -169,16 +194,15 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict, queried_kerne
     
     tokens_content = ""
     if error_analysis["missing_tokens"]:
-        searched_tokens = set()
         tokens_content = ""
         missing_tokens_obj_list = error_analysis["missing_tokens"]
         for token_obj in missing_tokens_obj_list:
             token_name = token_obj["identifier"]
-            if token_name in searched_tokens:
+            if token_name in already_searched_missing_tokens_stack[-1]:
                 continue
-            searched_tokens.add(token_name)
+            already_searched_missing_tokens_stack[-1].add(token_name)
             # Try to search in file and connected libraries            
-            proposal = search_custom_libs(token_name, file_metadata)
+            proposal = search_file(token_name, file_metadata)
             if proposal is not None:
                 tokens_content = f"{proposal}\n\n{tokens_content}"
                 continue
@@ -198,7 +222,7 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict, queried_kerne
         return remove_namespaces(tokens_content, remove_tags=False), True
             
 
-def search_library_for_token(token_name : str, custom_metadata : dict, searched_libs : set = set()):
+def search_file_for_token(token_name : str, custom_metadata : dict, searched_libs : set = set()):
     for global_var in custom_metadata["global_vars"]:
         if token_name == global_var["name"]:
             return global_var["full_line"], searched_libs
@@ -213,7 +237,7 @@ def search_library_for_token(token_name : str, custom_metadata : dict, searched_
         if str(library["_id"]) in searched_libs:
             continue
         searched_libs.add(str(library["_id"]))
-        proposal, sub_searched_libs = search_library_for_token(token_name, library, searched_libs)
+        proposal, sub_searched_libs = search_file_for_token(token_name, library, searched_libs)
         searched_libs.update(sub_searched_libs)
         if proposal is not None:
             return proposal, searched_libs
@@ -221,80 +245,92 @@ def search_library_for_token(token_name : str, custom_metadata : dict, searched_
     return None, searched_libs
              
 
-def get_third_party_libraries(file_metadata : dict):
+def get_third_party_libraries(file_metadata : dict, searched_lib_ids_set = set()):
     repo_name = file_metadata["repo_name"]
     libraries : set = set()
     for library in file_metadata["includes"]:
         if library["include_name"].split("/")[-1] in libraries:
             continue
         
-        custom_libs = [*list(train_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1]})) \
-                      ,*list(validation_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1]}))]
+        custom_libs = [*list(files_metadata_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1].strip()}))]
         if len(custom_libs) == 0:
-            libraries.add(library["include_name"].split("/")[-1])
+            libraries.add(library["full_line"].strip())
         else:
             for custom_lib in custom_libs:
-                libraries.update(get_third_party_libraries(custom_lib))
+                if str(custom_lib["_id"]) in searched_lib_ids_set:
+                    continue
+                searched_lib_ids_set.add(str(custom_lib["_id"]))
+                libraries.update(get_third_party_libraries(custom_lib), searched_lib_ids_set)
     
     return libraries
+
+def validate_variable_scope(file_metadata : dict, line_idx : int) -> str:
+    full_content_lines : List[str] = file_metadata["full_content"].splitlines(keepends=True)
+    
+    i = line_idx
+    while i >= 0:
+        line = full_content_lines[i]
+        i -= 1
+        if line.find("{") != -1:
+            while i >= 0:
+                line = full_content_lines[i]
+                i -= 1
+                if line.strip() == "":
+                    continue
+                if line.find("class ") != -1 or line.find("struct ") != -1 or line.find("namespace ") != -1:
+                    return Parser().remove_namespaces_and_tags(full_content_lines[line_idx], remove_tags=False).strip()
+                else:
+                    return None
+
+    return Parser().remove_namespaces_and_tags(full_content_lines[i], remove_tags=False).strip()
+    
+def transform_template(token_name : str, line : str) -> str:
+    token_start_idx = line.find(token_name)
+    if token_start_idx == -1:
+        return None
+    token_end_idx = token_start_idx + len(token_name) + 1
+    
+    template_param = None
+    end_tokens_set = set([",", "<"])
+    i = token_start_idx
+    while i > 0:
+        i -= 1
+        c = line[i]
+        if c in end_tokens_set:
+            template_param = line[i+1:token_end_idx]
+            break
+    if template_param is None:
+        return None
+    
+    param_type = template_param.split(" ")[0].strip()
+    # substitutions are choosen ad hoc
+    param_type_mapper = {
+        "typename" : "int",
+        "class" : "int"
+    }
+    
+    return "using {} = {};".format(token_name, param_type_mapper.get(param_type, "int"))
+    
     
 
     
+    
+
 def search_full_text(token_name : str, file_metadata : dict) -> str:
-    class_re = re.compile("(\W|^\s*)class\W")
-    struct_re = re.compile("(\W|^\s*)struct\W")
-    token_re = re.compile(f"\W{token_name}\W")
+    token_search_re = re.compile(f"^\s*(\S+\s)+[*&]*{token_name}(\s*=\s*.+\s*)?;")
+    template_token_re = re.compile(f"^\s*template\s*<.*[\s]{token_name}[\s,>].*")
     
-    full_content_lines : List[str] = file_metadata["full_content"].splitlines()
+    full_content_lines : List[str] = file_metadata["full_content"].splitlines(keepends=True)
+    
     for i, line in enumerate(full_content_lines):
-        if not token_re.match(line):
-            continue
+        if (res := token_search_re.match(line)):
+            return validate_variable_scope(file_metadata, i)
         
-        non_comment_match = lambda reg, line: reg.match(line) is not None and not line.lstrip().startswith("//") and not line.lstrip().startswith("*") and not line.rstrip().endswith("*/") and not line.rstrip().endswith(";")
-        
-        proposal = []
-        is_class = non_comment_match(class_re, line)
-        is_struct = non_comment_match(struct_re, line)
-        if is_class or is_struct:
-            proposal.append(line)
-            j = i - 1
-            # Get prefix (template, rest of definition, ...)
-            while j >= 0:
-                j_line = full_content_lines[j]
-                if j_line.lstrip().startswith("//") or \
-                   j_line.rstrip().endswith("*/") or   \
-                   j_line.rstrip().endswith("}") or    \
-                   j_line.strip() == "":
-                    break
-                
-                proposal.insert(0, j_line)
-            
-            # Get rest of body
-            count_brackets = Parser().count_brackets
-            brackets_count = count_brackets(line)
-            j = i + 1
-            while j < len(full_content_lines):
-                j_line = full_content_lines[j]
-                brackets_count = count_brackets(j_line)
-                if brackets_count == 0:
-                    last_bracket_idx = j_line.rfind("}")
-                    if last_bracket_idx != -1:
-                        j_line = j_line[:last_bracket_idx]
-                    proposal.append(j_line[:last_bracket_idx])
-                    break
-                elif brackets_count < 0:
-                    for _ in range(abs(brackets_count)):
-                        last_bracket_idx = j_line.rfind("}")
-                        j_line = j_line[:last_bracket_idx]
-                    proposal.append(j_line)
-                    break
-                proposal.append(j_line)
-            
-            return Parser().remove_namespaces_and_tags("\n".join(proposal))
-    return None
+        elif (res := template_token_re.match(line)):
+            return transform_template(token_name, line)
 
-def search_custom_libs(token_name : str, file_metadata : dict):
-    proposal, _ = search_library_for_token(token_name, file_metadata)
+def search_file(token_name : str, file_metadata : dict):
+    proposal, _ = search_file_for_token(token_name, file_metadata)
     return proposal
 
 def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
@@ -309,7 +345,9 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
         elif str(kernel["_id"]) not in queried_kernel_ids:
             queried_kernel_ids.add(str(kernel["_id"]))
             
+            already_searched_missing_tokens_stack.append(set())
             validation_result = validate_kernel(kernel, queried_kernel_ids)
+            already_searched_missing_tokens_stack.pop()
             validation_result["nvcc_info"] = nvcc_info
             
             new_vals = {
@@ -318,7 +356,7 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
             train_db.update_one({"_id" : kernel["_id"]}, new_vals)
             if validation_result["compiled"]:
                 compiled += 1
-                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[:-4])
+                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[DEFAULT_ADDITIONAL_CONTENT_LINES_SIZE:])
                 return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
             else:
                 not_compiled += 1
@@ -333,7 +371,9 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
             return "{}\n{}".format(kernel["header"], kernel["body"])
         elif str(kernel["_id"]) not in queried_kernel_ids:
             queried_kernel_ids.add(str(kernel["_id"]))
+            already_searched_missing_tokens_stack.append(set())
             validation_result = validate_kernel(kernel, queried_kernel_ids)
+            already_searched_missing_tokens_stack.pop()
             validation_result["nvcc_info"] = nvcc_info
             if validation_result["compiled"]:
                 compiled += 1
@@ -345,23 +385,20 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
             }
             validation_db.update_one({"_id" : kernel["_id"]}, new_vals)
             if validation_result["compiled"]:
-                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[:-4])
+                add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[DEFAULT_ADDITIONAL_CONTENT_LINES_SIZE:])
                 return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
             else:
                 return None
     return None
              
-def validate_kernel(kernel : Dict, queried_kernel_ids : set = set()) -> Dict:
+def validate_kernel(kernel : Dict, queried_kernel_ids : set = set(), add_main : bool = True) -> Dict:
 
     kernel_str = "\n{}{}\n".format(kernel["header"], kernel["body"])
-    additional_content = """
-#include <cstdint>
-
-using namespace std;
-
-int main() {
-    return 0;
-}"""
+    
+    if add_main:
+        additional_content = DEFAULT_ADDITIONAL_CONTENT
+    else:
+        additional_content = ""
 
     kernel_validation = {
         "iterations" : [],
@@ -401,13 +438,67 @@ int main() {
         if found == True or (not applied_third_party_libs and patch_proposal is not None):
             if not found:
                 applied_third_party_libs = True
-            additional_content = f"{patch_proposal}\n\n{additional_content}"
+            additional_content = reorder_additional_content(f"{patch_proposal}\n\n{additional_content}", error_analyses)
         else:
             kernel_validation["compiled"] = False
             break
 
     return kernel_validation
 
+def reorder_additional_content(additional_content : str, error_analyses : dict) -> str:
+    using_lines = []
+    rest_lines = []
+    for line in additional_content.splitlines():
+        if line.strip() == "":
+            continue
+        if line.startswith("using"):
+            using_lines.append(line)
+        else:
+            rest_lines.append(line)
+    
+    additional_content = "\n".join(reorder_using_lines(using_lines)) + "\n\n" + "\n".join(rest_lines)
+    for error in error_analyses["already_defined_errors"]:
+        identifier = error["identifier"]
+        r = re.compile(f"\W{identifier}\W")
+        for line in additional_content.splitlines(keepends=True):
+            if r.search(line) is not None:
+                additional_content.replace(line, "", 1)
+                break
+        
+    return additional_content
+
+def reorder_using_lines(using_lines : list) -> list:
+    r = re.compile("using (\S+) = (.+);")
+    type_val_dict = {}
+    type_line_dict = {}
+    for line in using_lines:
+        res = r.match(line)
+        if res is None:
+            continue
+        
+        type_val_dict[res[1]] = res[2]
+        type_line_dict[res[1]] = line
+    
+    ordered_lines = []
+    for _ in range(len(type_val_dict)):
+        type_val_dict_copy = deepcopy(type_val_dict)
+        for type, val in type_val_dict_copy.items():
+            r = re.compile(f"\W{val}\W")
+            is_dependent = False
+            for subtype in type_val_dict_copy.keys():
+                if r.search(subtype):
+                    is_dependent = True
+                    break
+
+            if is_dependent:
+                continue
+            else:
+                ordered_lines.append(type_line_dict[type])
+                del type_val_dict[type]
+                del type_line_dict[type]
+    
+    return ordered_lines
+            
 def validate_db():    
     pbar = tqdm(tuple(train_db.find()))
     global compiled
@@ -419,7 +510,9 @@ def validate_db():
         if train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
             continue
         
+        already_searched_missing_tokens_stack.append(set())
         validation_result = validate_kernel(kernel)
+        already_searched_missing_tokens_stack.pop()
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
             compiled += 1
@@ -446,7 +539,9 @@ def validate_db():
         if validation_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
             continue
         
+        already_searched_missing_tokens_stack.append(set())
         validation_result = validate_kernel(kernel)
+        already_searched_missing_tokens_stack.pop()
         validation_result["nvcc_info"] = nvcc_info
         if validation_result["compiled"]:
             compiled += 1
