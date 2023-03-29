@@ -9,7 +9,7 @@ random.seed(SEED)
 # LR = 5e-4
 LR = 1e-3
 WARMUP_DURATION = 50
-BATCH_SIZE = 20
+BATCH_SIZE = 30
 
 MODELS_OUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../models/bart")
 

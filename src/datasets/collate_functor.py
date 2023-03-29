@@ -2,7 +2,7 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from src.model.t5_small.config import MAX_SEQUENCE_SIZE
+from src.model.bart.config import MAX_SEQUENCE_SIZE
 
 from src.datasets.config import DEVICE
 

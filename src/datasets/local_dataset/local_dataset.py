@@ -1,7 +1,7 @@
 import random
 import transformers
 import torch
-from src.model.t5_small.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
+from src.model.bart.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
 from src.datasets.collate_functor import CollateFunctor
 from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
 from src.datasets.config import SAMPLING_TYPES, mongoDB

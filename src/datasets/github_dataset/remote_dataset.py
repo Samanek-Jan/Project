@@ -4,7 +4,7 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSeq2SeqLM
-from src.model.t5_small.config import MAX_SEQUENCE_SIZE
+from src.model.bart.config import MAX_SEQUENCE_SIZE
 
 from src.datasets.collate_functor import CollateFunctor
 from src.datasets.config import SAMPLING_TYPES
