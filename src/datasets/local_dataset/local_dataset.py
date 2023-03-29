@@ -1,6 +1,8 @@
 import random
-import tokenizers
+import transformers
 import torch
+from src.model.t5_small.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
+from src.datasets.collate_functor import CollateFunctor
 from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
 from src.datasets.config import SAMPLING_TYPES, mongoDB
 
@@ -52,14 +54,21 @@ class LocalDataset(torch.utils.data.Dataset):
     
     def __next__(self):
         i = random.randint(0, self.__len__())
-        return self.__iter__(i)
+        return self.__getitem__(i)
     
 
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 if __name__ == "__main__":
-    tokenizer = tokenizers.Tokenizer.from_file("/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/data/tokenizer/vocab_20000.json")
-    dataset = LocalDataset(tokenizer, 10, 10, "train")
+    tokenizer = AutoTokenizer.from_pretrained("Salesforce/codegen-350M-mono", use_fast=False, model_max_length=512, add_bos_token=True)
+    tokenizer.add_special_tokens({
+        "bos_token" : BOS_TOKEN,
+        "eos_token" : EOS_TOKEN,
+        "unk_token" : UNK_TOKEN,
+        "pad_token" : PAD_TOKEN,
+    })
+    dataset = LocalDataset(tokenizer, "train")
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size = 1, collate_fn=CollateFunctor(tokenizer))
     
-    while True:
-        (x_ids, x_tokens), (y_ids, y_tokens) = next(dataset)
+    for (x_ids, x_tokens), (y_ids, y_tokens) in dataloader:        
         print(len(x_ids), len(y_ids))
         

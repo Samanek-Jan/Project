@@ -311,14 +311,10 @@ def transform_template(token_name : str, line : str) -> str:
     
     return "using {} = {};".format(token_name, param_type_mapper.get(param_type, "int"))
     
-    
-
-    
-    
 
 def search_full_text(token_name : str, file_metadata : dict) -> str:
-    token_search_re = re.compile(f"^\s*(\S+\s)+[*&]*{token_name}(\s*=\s*.+\s*)?;")
-    template_token_re = re.compile(f"^\s*template\s*<.*[\s]{token_name}[\s,>].*")
+    token_search_re = re.compile(f"^\s*(\S+\s)+[*&]*{re.escape(token_name)}(\s*=\s*.+\s*)?;")
+    template_token_re = re.compile(f"^\s*template\s*<.*[\s]{re.escape(token_name)}[\s,>].*")
     
     full_content_lines : List[str] = file_metadata["full_content"].splitlines(keepends=True)
     

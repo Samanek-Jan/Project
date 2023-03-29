@@ -88,7 +88,7 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 1,
+                   eval_every_n = 5,
                    model_d = {}):
     
     global pretraining
@@ -151,28 +151,29 @@ def train_and_test(model,
                     "source_sentences" : source_sentences,
                     "target_sentences" : target_sentences,
                     "pred_sentences" : pred_sentences,
-                    "bv_BLEU" : bleu
+                    "bv_BLEU" : bleu,
+                    "eval_every_n" : eval_every_n
                 }
                     
                 # full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
                 full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_from_scratch"))
                 torch.save(best_version, full_path) 
         
-        print(f"Training bleu score = {bleu:.3f}")
-        print(f"Examples")
-        rand_inds = torch.randint(0, len(target_sentences), (3,))
-        for i in rand_inds:
-            obj = {
-                "SOURCE" : source_sentences[i],
-                "TARGET" : target_sentences[i],
-                "PREDIC" : pred_sentences[i]
-            }
-            print(json.dumps(obj, indent=2))
-        print("--------------------------------\n")
+            print(f"Training bleu score = {bleu:.3f}")
+            print(f"Examples")
+            rand_inds = torch.randint(0, len(target_sentences), (3,))
+            for i in rand_inds:
+                obj = {
+                    "SOURCE" : source_sentences[i],
+                    "TARGET" : target_sentences[i],
+                    "PREDIC" : pred_sentences[i]
+                }
+                print(json.dumps(obj, indent=2))
+            print("--------------------------------\n")
         
-        if bleu >= max_bleu:
-            max_bleu = bleu
-            
+            if bleu >= max_bleu:
+                max_bleu = bleu
+           
         torch.cuda.empty_cache()
            
     return best_version

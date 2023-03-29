@@ -12,7 +12,7 @@ db = MongoClient(MONGODB_CONNECTION_STRING)["cuda_snippets"]
 db_from = db["validation"]
 db_to = db["train"]
 sample_random = True
-move_ratio = 0.1
+move_ratio = 0.5
 
 # ----------------------------------------------------------------
 
