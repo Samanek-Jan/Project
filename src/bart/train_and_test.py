@@ -10,12 +10,12 @@ import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
-from src.datasets.config import DEVICE
-from src.datasets.collate_functor import CollateFunctor
+from src.bart.datasets.config import DEVICE
+from src.bart.datasets.collate_functor import CollateFunctor
 
-from src.model.bart.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
-from src.datasets.github_dataset.remote_dataset import RemoteDataset
-from src.datasets.local_dataset.local_dataset import LocalDataset
+from src.bart.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
+from src.bart.datasets.github_dataset.remote_dataset import RemoteDataset
+from src.bart.datasets.local_dataset.local_dataset import LocalDataset
 
 pretraining = False
 

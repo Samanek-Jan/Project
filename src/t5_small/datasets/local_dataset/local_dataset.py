@@ -1,10 +1,10 @@
 import random
 import transformers
 import torch
-from src.model.bart.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
-from src.datasets.collate_functor import CollateFunctor
-from src.datasets.local_dataset.local_data_sampler import LocalDataSampler
-from src.datasets.config import SAMPLING_TYPES, mongoDB
+from src.t5_small.config import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
+from src.t5_small.datasets.collate_functor import CollateFunctor
+from src.t5_small.datasets.local_dataset.local_data_sampler import LocalDataSampler
+from src.t5_small.datasets.config import SAMPLING_TYPES, mongoDB
 
 class LocalDataset(torch.utils.data.Dataset):
     
@@ -61,8 +61,8 @@ from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("Salesforce/codegen-350M-mono", use_fast=False, model_max_length=512, add_bos_token=True)
     tokenizer.add_special_tokens({
-        "bos_token" : BOS_TOKEN,
-        "eos_token" : EOS_TOKEN,
+        # "bos_token" : BOS_TOKEN,
+        # "eos_token" : EOS_TOKEN,
         "unk_token" : UNK_TOKEN,
         "pad_token" : PAD_TOKEN,
     })

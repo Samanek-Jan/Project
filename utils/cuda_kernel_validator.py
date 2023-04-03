@@ -245,23 +245,23 @@ def search_file_for_token(token_name : str, custom_metadata : dict, searched_lib
     return None, searched_libs
              
 
-def get_third_party_libraries(file_metadata : dict, searched_lib_ids_set = set()):
+def get_third_party_libraries(file_metadata : dict, searched_lib_ids_set : set = set()):
     repo_name = file_metadata["repo_name"]
     libraries : set = set()
     for library in file_metadata["includes"]:
         if library["include_name"].split("/")[-1] in libraries:
             continue
         
-        custom_libs = [*list(files_metadata_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1].strip()}))]
+        custom_libs = [*list(files_metadata_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1].strip(), "_id" : {"$not" : {"$in" : [ObjectId(id) for id in searched_lib_ids_set]}}}))]
         if len(custom_libs) == 0:
             libraries.add(library["full_line"].strip())
         else:
             for custom_lib in custom_libs:
-                if str(custom_lib["_id"]) in searched_lib_ids_set:
+                if (custom_lib_id := str(custom_lib["_id"])) in searched_lib_ids_set:
                     continue
-                searched_lib_ids_set.add(str(custom_lib["_id"]))
-                libraries.update(get_third_party_libraries(custom_lib), searched_lib_ids_set)
-    
+                searched_lib_ids_set.add(custom_lib_id)
+                libraries.update(get_third_party_libraries(custom_lib, searched_lib_ids_set))
+
     return libraries
 
 def validate_variable_scope(file_metadata : dict, line_idx : int) -> str:
@@ -351,11 +351,9 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
             }
             train_db.update_one({"_id" : kernel["_id"]}, new_vals)
             if validation_result["compiled"]:
-                compiled += 1
                 add_content = "\n".join(validation_result["iterations"][-1]["additional_content"].splitlines()[DEFAULT_ADDITIONAL_CONTENT_LINES_SIZE:])
                 return "{}\n{}\n{}".format(add_content, kernel["header"], kernel["body"])
             else:
-                not_compiled += 1
                 return None
         return None
                 
@@ -371,11 +369,6 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
             validation_result = validate_kernel(kernel, queried_kernel_ids)
             already_searched_missing_tokens_stack.pop()
             validation_result["nvcc_info"] = nvcc_info
-            if validation_result["compiled"]:
-                compiled += 1
-            else:
-                not_compiled += 1
-            
             new_vals = {
                 "$set" : {"validation" : validation_result}
             }
@@ -455,7 +448,7 @@ def reorder_additional_content(additional_content : str, error_analyses : dict) 
     additional_content = "\n".join(reorder_using_lines(using_lines)) + "\n\n" + "\n".join(rest_lines)
     for error in error_analyses["already_defined_errors"]:
         identifier = error["identifier"]
-        r = re.compile(f"\W{identifier}\W")
+        r = re.compile(f"\W{re.escape(identifier)}\W")
         for line in additional_content.splitlines(keepends=True):
             if r.search(line) is not None:
                 additional_content.replace(line, "", 1)
@@ -479,7 +472,7 @@ def reorder_using_lines(using_lines : list) -> list:
     for _ in range(len(type_val_dict)):
         type_val_dict_copy = deepcopy(type_val_dict)
         for type, val in type_val_dict_copy.items():
-            r = re.compile(f"\W{val}\W")
+            r = re.compile(f"\W{re.escape(val)}\W")
             is_dependent = False
             for subtype in type_val_dict_copy.keys():
                 if r.search(subtype):
@@ -503,7 +496,11 @@ def validate_db():
     print("Validating train part")
     for kernel in pbar:
         # Already validated in recursion function
-        if train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+        if evaluated_kernel := train_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+            if evaluated_kernel.get("validation").get("compiled"):
+                compiled += 1
+            else:
+                not_compiled += 1
             continue
         
         already_searched_missing_tokens_stack.append(set())
@@ -532,7 +529,11 @@ def validate_db():
     print("Validating validate part")
     for kernel in pbar:
         # Already validated in recursion function
-        if validation_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+        if evaluated_kernel := validation_db.find_one({"_id" : kernel["_id"], "validation" : {"$exists" : True}}):
+            if evaluated_kernel.get("validation").get("compiled"):
+                compiled += 1
+            else:
+                not_compiled += 1
             continue
         
         already_searched_missing_tokens_stack.append(set())
