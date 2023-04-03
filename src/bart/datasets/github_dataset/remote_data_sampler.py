@@ -4,8 +4,8 @@ import torch
 import numpy as np
 import datasets
 import tokenizers
-from model.t5_small.config import BOS_TOKEN, EOS_TOKEN
-from src.datasets.config import DEVICE
+from bart.config import BOS_TOKEN, EOS_TOKEN
+from src.bart.datasets.config import DEVICE
 import random
 from copy import deepcopy
 

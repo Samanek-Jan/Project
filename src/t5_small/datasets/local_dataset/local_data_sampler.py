@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import datasets
 import tokenizers
-from src.datasets.config import DEVICE
+from src.t5_small.datasets.config import DEVICE
 import random
 
 class LocalDataSampler():
