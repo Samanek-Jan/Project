@@ -214,7 +214,7 @@ def apply_error_patch(error_analysis : Dict, file_metadata : Dict, queried_kerne
                 continue
     
     if tokens_content == "":
-        third_party_libs_set = get_third_party_libraries(file_metadata)
+        third_party_libs_set, _ = get_third_party_libraries(file_metadata)
         tokens_content = "\n".join(third_party_libs_set)
         return tokens_content if tokens_content != "" else None, False
     else:
@@ -252,7 +252,7 @@ def get_third_party_libraries(file_metadata : dict, searched_lib_ids_set : set =
         if library["include_name"].split("/")[-1] in libraries:
             continue
         
-        custom_libs = [*list(files_metadata_db.find({"repo_name" : repo_name, "filename" : library["include_name"].split("/")[-1].strip(), "_id" : {"$not" : {"$in" : [ObjectId(id) for id in searched_lib_ids_set]}}}))]
+        custom_libs = [*list(files_metadata_db.find({"repo_name" : repo_name, "root_path" : library["include_name"].strip(), "_id" : {"$not" : {"$in" : [ObjectId(id) for id in searched_lib_ids_set]}}}))]
         if len(custom_libs) == 0:
             libraries.add(library["full_line"].strip())
         else:
@@ -260,9 +260,11 @@ def get_third_party_libraries(file_metadata : dict, searched_lib_ids_set : set =
                 if (custom_lib_id := str(custom_lib["_id"])) in searched_lib_ids_set:
                     continue
                 searched_lib_ids_set.add(custom_lib_id)
-                libraries.update(get_third_party_libraries(custom_lib, searched_lib_ids_set))
+                sub_libs, subsearched_lib_ids_set = get_third_party_libraries(custom_lib, searched_lib_ids_set)
+                libraries.update(sub_libs)
+                searched_lib_ids_set.update(subsearched_lib_ids_set)
 
-    return libraries
+    return libraries, searched_lib_ids_set
 
 def validate_variable_scope(file_metadata : dict, line_idx : int) -> str:
     full_content_lines : List[str] = file_metadata["full_content"].splitlines(keepends=True)
@@ -329,7 +331,7 @@ def search_file(token_name : str, file_metadata : dict):
     proposal, _ = search_file_for_token(token_name, file_metadata)
     return proposal
 
-def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
+def search_db(token_name : str, repo_name : str, queried_kernel_ids : set, max_recursion_depth=100):
     global compiled
     global not_compiled
     
@@ -338,7 +340,7 @@ def search_db(token_name : str, repo_name : str, queried_kernel_ids : set):
     if kernel != None:
         if kernel.get("validation"):
             return "{}\n{}".format(kernel["header"], kernel["body"])
-        elif str(kernel["_id"]) not in queried_kernel_ids:
+        elif str(kernel["_id"]) not in queried_kernel_ids and len(queried_kernel_ids) < max_recursion_depth:
             queried_kernel_ids.add(str(kernel["_id"]))
             
             already_searched_missing_tokens_stack.append(set())
@@ -557,8 +559,8 @@ def validate_db():
     
         
 if __name__ == "__main__":
-    train_db.update_many({}, {"$unset" : {"validation" : ""}})
-    validation_db.update_many({}, {"$unset" : {"validation" : ""}} )
+    # train_db.update_many({}, {"$unset" : {"validation" : ""}})
+    # validation_db.update_many({}, {"$unset" : {"validation" : ""}} )
     
     validate_db()
     

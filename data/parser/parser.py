@@ -16,9 +16,9 @@ HEADER_FILE_SUFFIXES = set(["h", "hpp", "hu", "cuh"])
 COMPATIBLE_FILE_SUFFIXES = set([*GPU_FILE_SUFFIXES, *HEADER_FILE_SUFFIXES, "cpp", "cc", "rc"])
 DATA_FILE_SUFFIX = ".data.json"
 
-# IN_FOLDER = "/tmp/xsaman02/raw"
-IN_FOLDER = "../../../data/raw"
-TRAIN_RATIO = 0.85
+IN_FOLDER = "/tmp/xsaman02/raw"
+# IN_FOLDER = "../../../data/raw"
+TRAIN_RATIO = 0.92
 
 class Parser:
 
@@ -29,7 +29,7 @@ class Parser:
         self.is_current_file_gpu                        : bool  = False
         self.is_parsing_comment                         : bool  = False
         self.filename                                   : str   = "",
-        self.searched_cuda_header_token_substitutions   : dict  = {"__DH__" : "__device____host__", "__dh__" : "__device____host__"}
+        self.searched_cuda_header_token_substitutions   : dict  = {"__DH__" : "__device____host__", "__dh__" : "__device____host__", "__hd__" : "__host____device__", "__HD__" : "__host____device__"}
         self.searched_cuda_header_token_set             : set   = set(["__device__", "__host__", "__global__", *self.searched_cuda_header_token_substitutions.keys()])
         self.invalid_kernels                            : list  = []
         
@@ -49,7 +49,7 @@ class Parser:
             self.filename = filename
             self.is_current_file_gpu = filename.split(".")[-1] in GPU_FILE_SUFFIXES
             return self.__process_file(filename)
-        return [], {}
+        return [], None
 
     def process_files(self, filenames : Iterable[str]) -> Generator[List, None, None]:
         """ Parse all given files
@@ -597,12 +597,11 @@ def parse_folder() -> None:
         pbar = tqdm(wanted_files, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', leave=False)
         
         for file_obj in pbar:
-            file_obj["root_path"] = os.path.join(repo_name, file_obj.get("root_path"))
             pbar.set_description("Processing")
             pbar.set_postfix_str(file_obj.get("root_path"))
 
             try:
-                kernels, file_metadata = parser.process_file(file_obj.get("full_path"))
+                kernels, file_metadata = parser.process_file(file_obj["full_path"] )
                 if file_metadata is None:
                     continue
                 

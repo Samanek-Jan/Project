@@ -27,8 +27,8 @@ def main():
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
-    argument_parser.add_argument("--model_name", "-m", type=str, default="ainize/bart-base-cnn")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="Salesforce/codegen-350M-mono")
+    argument_parser.add_argument("--model_name", "-m", type=str, default="facebook/bart-large")
+    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="facebook/bart-large")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
@@ -50,8 +50,9 @@ def main():
     # tokenizer.bos_token = BOS_TOKEN
     # tokenizer.eos_token = EOS_TOKEN
     # tokenizer.unk_token = UNK_TOKEN
-    model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
-    model.resize_token_embeddings(len(tokenizer))
+    # model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
+    # model.resize_token_embeddings(len(tokenizer))
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
         
     # Initializing a model from the configuration
@@ -156,7 +157,7 @@ def train_and_test(model,
                 }
                     
                 # full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
-                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_from_scratch"))
+                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretrained"))
                 torch.save(best_version, full_path) 
         
             print(f"Training bleu score = {bleu:.3f}")
@@ -195,7 +196,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
-        generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE)
+        generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         
         sources_list.extend(x_str)

@@ -4,11 +4,11 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSeq2SeqLM
-from src.model.bart.config import MAX_SEQUENCE_SIZE
+from src.t5_small.config import MAX_SEQUENCE_SIZE
 
-from src.datasets.collate_functor import CollateFunctor
-from src.datasets.config import SAMPLING_TYPES
-from src.datasets.github_dataset.remote_data_sampler import RemoteDataSampler
+from src.t5_small.datasets.collate_functor import CollateFunctor
+from src.t5_small.datasets.config import SAMPLING_TYPES
+from src.t5_small.datasets.github_dataset.remote_data_sampler import RemoteDataSampler
 
 
 class RemoteDataset(torch.utils.data.Dataset):
