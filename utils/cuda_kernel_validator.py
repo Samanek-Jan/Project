@@ -559,8 +559,8 @@ def validate_db():
     
         
 if __name__ == "__main__":
-    # train_db.update_many({}, {"$unset" : {"validation" : ""}})
-    # validation_db.update_many({}, {"$unset" : {"validation" : ""}} )
+    train_db.update_many({"validation.compiled" : False}, {"$unset" : {"validation" : ""}})
+    validation_db.update_many({"validation.compiled" : False}, {"$unset" : {"validation" : ""}} )
     
     validate_db()
     

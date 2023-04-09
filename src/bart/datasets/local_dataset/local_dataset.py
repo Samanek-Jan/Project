@@ -59,13 +59,8 @@ class LocalDataset(torch.utils.data.Dataset):
 
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 if __name__ == "__main__":
-    tokenizer = AutoTokenizer.from_pretrained("Salesforce/codegen-350M-mono", use_fast=False, model_max_length=512, add_bos_token=True)
-    tokenizer.add_special_tokens({
-        # "bos_token" : BOS_TOKEN,
-        # "eos_token" : EOS_TOKEN,
-        "unk_token" : UNK_TOKEN,
-        "pad_token" : PAD_TOKEN,
-    })
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", use_fast=False, model_max_length=1024, add_bos_token=True)
+
     dataset = LocalDataset(tokenizer, "train")
     dataloader = torch.utils.data.DataLoader(dataset, batch_size = 1, collate_fn=CollateFunctor(tokenizer))
     

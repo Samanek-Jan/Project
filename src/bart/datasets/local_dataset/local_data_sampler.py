@@ -22,9 +22,9 @@ class LocalDataSampler():
 
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
 
-        kernel_x = kernel.get("comment", "") + "\n" + kernel.get("header", "") + "<mask>"
-        kernel_y = kernel.get("comment", "") + "\n" + kernel.get("header", "") + kernel.get("body", "")
-            
+        kernel_x = kernel.get("comment", "") + "\n" + kernel.get("header", "") + self.tokenizer.mask_token
+        kernel_y = kernel.get("body", "")
+        
         return kernel_x, kernel_y
 
     def sample_NSP(self, kernel):

@@ -3,6 +3,7 @@ import os, sys
 from tokenizers import Tokenizer
 import torch
 import torch.nn as nn
+from torch.cuda import OutOfMemoryError
 import torchmetrics
 from tqdm import tqdm
 import argparse
@@ -19,7 +20,15 @@ from src.bart.datasets.local_dataset.local_dataset import LocalDataset
 
 pretraining = False
 
-
+def format_memory_int(number : int) -> str:
+    if number > 1e9:
+        return "{:.2f}GB".format(number/1e9)
+    elif number > 1e6:
+        return "{:.2f}MB".format(number/1e6)
+    elif number > 1e3:
+        return "{:.2f}KB".format(number/1e3)
+    return "{}B".format(number)
+    
 def main():
     print(f"Using {DEVICE}")
     global pretraining
@@ -37,30 +46,27 @@ def main():
     # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
     global MAX_SEQUENCE_SIZE
-    MAX_SEQUENCE_SIZE = configuration.vocab_size
+    MAX_SEQUENCE_SIZE = configuration.max_position_embeddings
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
-    tokenizer.add_special_tokens({
-        "bos_token" : BOS_TOKEN,
-        "eos_token" : EOS_TOKEN,
-        "unk_token" : UNK_TOKEN,
-        "pad_token" : PAD_TOKEN,
-    })
-    # tokenizer.pad_token = PAD_TOKEN
-    # tokenizer.bos_token = BOS_TOKEN
-    # tokenizer.eos_token = EOS_TOKEN
-    # tokenizer.unk_token = UNK_TOKEN
-    # model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
-    # model.resize_token_embeddings(len(tokenizer))
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-        
-    # Initializing a model from the configuration
+    
+    # Initializing model
+    model = None
+    optimizer = None
     model_dict = {}
     if args.model is not None:
+        model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
         model_dict = torch.load(args.model)
         model.load_state_dict(model_dict["model_dict"])
+        optimizer = transformers.AdamW(model.parameters(), lr=LR)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
+        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+
+    if torch.cuda.device_count() > 1:
+        print("Using", torch.cuda.device_count(), "GPUs!")
+        model = nn.DataParallel(model)
 
     
     collate_f = CollateFunctor(tokenizer)
@@ -89,15 +95,17 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 10,
+                   eval_every_n = 5,
                    model_d = {}):
     
     global pretraining
     
     best_version = {"bv_BLEU" : model_d.get("bv_BLEU", float("-inf"))}
-    scheduler = transformers.get_constant_schedule_with_warmup(                
+    scheduler = transformers.get_linear_schedule_with_warmup(                
             optimizer = optimizer,
-            num_warmup_steps = WARMUP_DURATION
+            num_warmup_steps = WARMUP_DURATION,
+            num_training_steps = epoch_n,
+            last_epoch=model_d.get("epoch", -1)
     )
     
     max_bleu = best_version["bv_BLEU"]
@@ -109,32 +117,10 @@ def train_and_test(model,
     bleu_list = model_d.get("bleu_list", [])
     rouge_list = model_d.get("rouge_list", [])
     
-    for epoch in range(1, epoch_n+1):
-        pbar = tqdm(iter(train_dataloader), leave=False)
-        model.train()
-
-        for (x, x_str), (y, y_str) in pbar:
-            optimizer.zero_grad()
-            prediction = model(**x, labels=y["input_ids"])
-            loss = prediction.loss
-            prediction = torch.argmax(prediction.logits, -1)
-            
-            prediction_str = tokenizer.batch_decode(prediction.tolist(), skip_special_tokens=True)
-            bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
-            
-            pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
-            epoch_loss.append(float(loss.item()))
-            loss.backward()
-            optimizer.step()
-            # break
+    for epoch in range(model_d.get("epoch", 1), epoch_n+1):
         
-        loss_list.append(float(torch.mean(torch.tensor(epoch_loss)).item()))
-        epoch_loss.clear()
-            
-        scheduler.step()
-        bleu_score.reset()
-                
-        if epoch % eval_every_n == 0:
+        # Evaluation
+        if epoch % eval_every_n == 0 and epoch > 1:
             pbar_prefix = f"[{epoch}/{epoch_n}]"
             bleu, rouge, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
             bv_bleu = best_version["bv_BLEU"]
@@ -143,8 +129,8 @@ def train_and_test(model,
             print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
             if bleu >= bv_bleu:
                 best_version = {
-                    "model_dict" : deepcopy(model.state_dict()),
-                    "optimizer_dict" : deepcopy(optimizer.state_dict()),
+                    "model_dict" : model.state_dict(),
+                    "optimizer_dict" : optimizer.state_dict(),
                     "loss_list" : loss_list,
                     "BLEU_list" : bleu_list,
                     "ROUGE_list" : rouge_list,
@@ -156,8 +142,9 @@ def train_and_test(model,
                     "eval_every_n" : eval_every_n
                 }
                     
-                # full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretraining" if pretraining else "_finetunning"))
-                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name, "_pretrained"))
+                full_path = os.path.join(output_folder, "{}{}.pt".format(model_name.replace("/", "-"), "_pretrained.best"))
+                if not os.path.isdir(output_folder):
+                    os.makedirs(output_folder, exist_ok=True)
                 torch.save(best_version, full_path) 
         
             print(f"Training bleu score = {bleu:.3f}")
@@ -175,6 +162,63 @@ def train_and_test(model,
             if bleu >= max_bleu:
                 max_bleu = bleu
            
+        torch.cuda.empty_cache()
+        
+        # Training
+        pbar = tqdm(iter(train_dataloader), leave=False)
+        model.train()
+        for (x, x_str), (y, y_str) in pbar:
+            optimizer.zero_grad()
+            prediction = None
+            
+            while True:
+                try:
+                    prediction = model(**x, labels=y["input_ids"])
+                except Exception as e:
+                    if type(e) != OutOfMemoryError:
+                        raise e
+                    torch.cuda.empty_cache()
+                    continue
+                break
+
+            t = torch.cuda.get_device_properties(0).total_memory
+            # r = torch.cuda.memory_reserved(0)
+            a = torch.cuda.memory_allocated(0)
+            pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
+            
+            loss = torch.mean(torch.unsqueeze(prediction.loss, 0))
+            prediction = torch.argmax(prediction.logits, -1)
+            
+            prediction_str = tokenizer.batch_decode(prediction.tolist(), skip_special_tokens=True)
+            bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
+            
+            pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
+            epoch_loss.append(float(loss.item()))
+            loss.backward()
+            optimizer.step()
+            # break
+        
+        loss_list.append(float(torch.mean(torch.tensor(epoch_loss)).item()))
+        epoch_loss.clear()
+            
+        scheduler.step()
+        bleu_score.reset()
+        
+        torch.cuda.empty_cache()
+        
+        # Save current version
+        current_version = {
+                    "model_dict" : model.state_dict(),
+                    "optimizer_dict" : optimizer.state_dict(),
+                    "loss_list" : loss_list,
+                    "BLEU_list" : bleu_list,
+                    "ROUGE_list" : rouge_list,
+                    "epoch" : epoch
+                }
+        full_path = os.path.join(output_folder, "{}{}.pt".format(model_name.replace("/", "-"), "_pretrained.current"))
+        if not os.path.isdir(output_folder):
+            os.makedirs(output_folder, exist_ok=True)
+        torch.save(current_version, full_path) 
         torch.cuda.empty_cache()
            
     return best_version
@@ -196,7 +240,16 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
-        generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
+        generated_ids = None
+        while True:
+            try:
+                generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
+            except Exception as e:
+                if type(e) != OutOfMemoryError:
+                    raise e
+                torch.cuda.empty_cache()
+                continue
+            break
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         
         sources_list.extend(x_str)
