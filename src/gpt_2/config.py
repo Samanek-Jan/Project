@@ -8,7 +8,7 @@ random.seed(SEED)
 # DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 # LR = 5e-4
 LR = 1e-4
-WARMUP_DURATION = 3
+WARMUP_DURATION = 5
 BATCH_SIZE = 10
 
 MODELS_OUT_FOLDER = "./"

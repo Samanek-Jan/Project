@@ -1,6 +1,6 @@
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, GPT2Model, GPT2Tokenizer
 
-TOKENIZER_NAME = "Salesforce/codegen-350M-mono"
+TOKENIZER_NAME = "gpt2"
 
 DATA = """"
 using T = int;
@@ -30,10 +30,11 @@ __host__ __inline__ void init()
 """
 
 if __name__ == "__main__":
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+    tokenizer = GPT2Tokenizer.from_pretrained(TOKENIZER_NAME)
     print(len(tokenizer))
     x = tokenizer(DATA)
     
-    print(tokenizer.batch_decode([x["input_ids"]]))
+    print(decoded := tokenizer.batch_decode([x["input_ids"]])[0])
+    print("sequence is same: ", decoded == DATA)
     
     

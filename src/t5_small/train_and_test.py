@@ -14,7 +14,7 @@ from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 from src.t5_small.datasets.config import DEVICE
 from src.t5_small.datasets.collate_functor import CollateFunctor
 
-from src.t5_small.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
+from src.t5_small.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
 from src.t5_small.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.t5_small.datasets.local_dataset.local_dataset import LocalDataset
 
@@ -45,8 +45,8 @@ def main():
     pretraining = args.pretraining
     # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
-    global MAX_SEQUENCE_SIZE
-    MAX_SEQUENCE_SIZE = configuration.n_positions
+    # global MAX_SEQUENCE_SIZE
+    # MAX_SEQUENCE_SIZE = configuration.n_positions
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
     
@@ -117,7 +117,7 @@ def train_and_test(model,
     bleu_list = model_d.get("bleu_list", [])
     rouge_list = model_d.get("rouge_list", [])
     
-    for epoch in range(model_d.get("epoch", 1), epoch_n+1):
+    for epoch in range(model_d.get("epoch", 0)+1, epoch_n+1):
         
         # Evaluation
         if epoch % eval_every_n == 0 and epoch > 1:

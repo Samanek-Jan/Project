@@ -1,15 +1,15 @@
 import random
 import transformers
 import torch
-from src.bart.datasets.collate_functor import CollateFunctor
-from src.bart.datasets.local_dataset.local_data_sampler import LocalDataSampler
-from src.bart.datasets.config import SAMPLING_TYPES, mongoDB
+from src.gpt_2.datasets.collate_functor import CollateFunctor
+from src.gpt_2.datasets.local_dataset.local_data_sampler import LocalDataSampler
+from src.gpt_2.datasets.config import SAMPLING_TYPES, mongoDB
 
 class LocalDataset(torch.utils.data.Dataset):
     
     def __init__(self, tokenizer, part : str, max_epoch_size : int = None, sampling_type = SAMPLING_TYPES["NSP"], buffer_size : int = 5000, shuffle : bool = True):
         
-        self.datasampler = LocalDataSampler(tokenizer, sampling_type)
+        self.datasampler = LocalDataSampler(tokenizer, part)
         self.buffer_size = buffer_size
         self.shuffle = shuffle
         if part == "train":

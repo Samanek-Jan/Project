@@ -22,8 +22,8 @@ class LocalDataSampler():
 
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
 
-        kernel_x = "Generate body of CUDA function defined as:\n" + kernel.get("comment", "") + "\n" + kernel.get("header", "")
-        kernel_y = kernel.get("body", "")
+        kernel_x = ("supplement code:" + kernel.get("comment", "") + "" + kernel.get("header", "")).replace("\n", " ")
+        kernel_y = kernel.get("body", "").replace("\n", " ")
             
         return kernel_x, kernel_y
 
