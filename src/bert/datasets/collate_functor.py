@@ -4,8 +4,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from src.gpt_2.datasets.config import DEVICE
-from src.gpt_2.config import MAX_SEQUENCE_SIZE
+from src.bert.datasets.config import DEVICE
+from src.bert.config import MAX_SEQUENCE_SIZE
 
 
 class CollateFunctor:

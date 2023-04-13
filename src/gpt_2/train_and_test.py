@@ -11,7 +11,7 @@ import argparse
 import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, GPT2Tokenizer, GPT2LMHeadModel, GPT2Config
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, GPT2Tokenizer, GPT2LMHeadModel, GPT2Config, pipeline
 from src.gpt_2.datasets.config import DEVICE
 from src.gpt_2.datasets.collate_functor import CollateFunctor
 
@@ -37,8 +37,8 @@ def main():
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
-    argument_parser.add_argument("--model_name", "-m", type=str, default="distilgpt2")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="distilgpt2")
+    argument_parser.add_argument("--model_name", "-m", type=str, default="gpt2")
+    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="gpt2")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
@@ -46,7 +46,8 @@ def main():
     pretraining = args.pretraining
     # Downloading a model configuration
     configuration = GPT2Config.from_pretrained(args.model_name)
-    tokenizer = GPT2Tokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
+    configuration.max_length = MAX_SEQUENCE_SIZE
+    tokenizer = GPT2Tokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side='left')
     tokenizer.add_special_tokens({
         "pad_token" : tokenizer.eos_token
     })
@@ -56,22 +57,22 @@ def main():
     optimizer = None
     model_dict = {}
     if args.model is not None:
-        model = GPT2LMHeadModel.from_config(configuration).to(DEVICE)
+        model = AutoModelForCausalLM.from_config(configuration).to(DEVICE)
         model_dict = torch.load(args.model)
-        model_state_dict = OrderedDict()
-        for key, val in model_dict["model_dict"].items():
-            model_state_dict[".".join(key.split(".")[1:])] = val
+        # model_state_dict = OrderedDict()
+        # for key, val in model_dict["model_dict"].items():
+        #     model_state_dict[".".join(key.split(".")[1:])] = val
             
-        model.load_state_dict(model_state_dict)
+        model.load_state_dict(model_dict["model_dict"])
         optimizer = transformers.AdamW(model.parameters(), lr=LR)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = GPT2LMHeadModel.from_pretrained(args.model_name).to(DEVICE)
         optimizer = transformers.AdamW(model.parameters(), lr=LR)
 
-    if DEVICE != "cpu" and torch.cuda.device_count() > 1:
-        print("Using", torch.cuda.device_count(), "GPUs!")
-        model = nn.DataParallel(model)
+    # if DEVICE != "cpu" and torch.cuda.device_count() > 1:
+    #     print("Using", torch.cuda.device_count(), "GPUs!")
+    #     model = nn.DataParallel(model)
 
     
     collate_f = CollateFunctor(tokenizer)
@@ -172,7 +173,7 @@ def train_and_test(model,
         # Training
         pbar = tqdm(iter(train_dataloader), leave=False)
         model.train()
-        for (x, x_str), y in pbar:
+        for (x, x_str), (y, _) in pbar:
             optimizer.zero_grad()
             prediction = None
             
@@ -243,20 +244,21 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
     cur_bleu_score = 0
     cur_rouge_score = 0
+    generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=DEVICE)
     
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
-    for (x, x_str), _ in test_dataloader:
-        generated_ids = None
+    for (_, x_str), (_, y_str) in test_dataloader:
         while True:
             try:
-                generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_tokens=MAX_SEQUENCE_SIZE)
+                generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
-        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        
+        y_pred = [sample[0]["generated_text"] for sample in generated_text]
         
         sources_list.extend(x_str)
         sentences_target.extend(y_str)

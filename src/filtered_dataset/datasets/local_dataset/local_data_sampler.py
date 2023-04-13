@@ -16,18 +16,15 @@ class LocalDataSampler():
     def __call__(self, kernel):
         return self.sample(kernel)
 
-    def wrap_sample(self, sample : str) -> str:
-        return self.tokenizer.bos_token + sample + self.tokenizer.eos_token
-
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
         
-        x = self.kernel_prefix + kernel.get("comment", "") + "\n" + kernel.get("header", "") + "<bot>"
+        x = self.kernel_prefix + kernel.get("comment", "") + "\n" + kernel.get("header", "")
         y = kernel.get("body", "")
         
         if self.part == "valid":
-            return self.wrap_sample(x), self.wrap_sample(x + "\n" + y)
+            return x, x + "\n" + y
         else:
-            return self.wrap_sample(x + "\n" + y) , self.wrap_sample(y)
+            return x + "\n" + y, y
 
     def sample(self, kernel):
         return self.validate_and_tokenize_kernel(kernel)

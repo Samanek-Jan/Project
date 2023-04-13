@@ -11,13 +11,13 @@ import argparse
 import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
-from src.bart.datasets.config import DEVICE
-from src.bart.datasets.collate_functor import CollateFunctor
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, GPT2Tokenizer, GPT2LMHeadModel, GPT2Config, BertLMHeadModel, pipeline
+from src.bert.datasets.config import DEVICE
+from src.bert.datasets.collate_functor import CollateFunctor
 
-from src.bart.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, WARMUP_DURATION
-from src.bart.datasets.github_dataset.remote_dataset import RemoteDataset
-from src.bart.datasets.local_dataset.local_dataset import LocalDataset
+from src.bert.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, WARMUP_DURATION
+from src.bert.datasets.github_dataset.remote_dataset import RemoteDataset
+from src.bert.datasets.local_dataset.local_dataset import LocalDataset
 
 pretraining = False
 
@@ -37,8 +37,8 @@ def main():
     argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
-    argument_parser.add_argument("--model_name", "-m", type=str, default="facebook/bart-large")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="facebook/bart-large")
+    argument_parser.add_argument("--model_name", "-m", type=str, default="bert-base-uncased")
+    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="bert-base-uncased")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
@@ -46,27 +46,31 @@ def main():
     pretraining = args.pretraining
     # Downloading a model configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
+    configuration.max_length = MAX_SEQUENCE_SIZE
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side='left')
+    tokenizer.add_special_tokens({
+        "pad_token" : tokenizer.eos_token
+    })
     
     # Initializing model
     model = None
     optimizer = None
     model_dict = {}
     if args.model is not None:
-        model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
+        model = AutoModelForCausalLM.from_config(configuration).to(DEVICE)
         model_dict = torch.load(args.model)
-        model_state_dict = OrderedDict()
-        for key, val in model_dict["model_dict"].items():
-            model_state_dict[".".join(key.split(".")[1:])] = val
+        # model_state_dict = OrderedDict()
+        # for key, val in model_dict["model_dict"].items():
+        #     model_state_dict[".".join(key.split(".")[1:])] = val
             
-        model.load_state_dict(model_state_dict)
+        model.load_state_dict(model_dict["model_dict"])
         optimizer = transformers.AdamW(model.parameters(), lr=LR)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
+        model = BertLMHeadModel.from_pretrained(args.model_name, is_decoder=True).to(DEVICE)
         optimizer = transformers.AdamW(model.parameters(), lr=LR)
 
-    if torch.cuda.device_count() > 1:
+    if DEVICE != "cpu" and torch.cuda.device_count() > 1:
         print("Using", torch.cuda.device_count(), "GPUs!")
         model = nn.DataParallel(model)
 
@@ -169,13 +173,13 @@ def train_and_test(model,
         # Training
         pbar = tqdm(iter(train_dataloader), leave=False)
         model.train()
-        for (x, x_str), (y, y_str) in pbar:
+        for (x, x_str), (y, _) in pbar:
             optimizer.zero_grad()
             prediction = None
             
             while True:
                 try:
-                    prediction = model(**x, labels=y["input_ids"])
+                    prediction = model(**x, labels=y)
                 except Exception as e:
                     if type(e) != OutOfMemoryError:
                         raise e
@@ -183,16 +187,17 @@ def train_and_test(model,
                     continue
                 break
 
-            t = torch.cuda.get_device_properties(0).total_memory
-            # r = torch.cuda.memory_reserved(0)
-            a = torch.cuda.memory_allocated(0)
-            pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
+            if DEVICE != "cpu":
+                t = torch.cuda.get_device_properties(0).total_memory
+                # r = torch.cuda.memory_reserved(0)
+                a = torch.cuda.memory_allocated(0)
+                pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
             
             loss = torch.mean(torch.unsqueeze(prediction.loss, 0))
             prediction = torch.argmax(prediction.logits, -1)
             
             prediction_str = tokenizer.batch_decode(prediction.tolist(), skip_special_tokens=True)
-            bleu_score.update(prediction_str, [[sentence] for sentence in y_str])
+            bleu_score.update(prediction_str, [[sentence] for sentence in x_str])
             
             pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
             epoch_loss.append(float(loss.item()))
@@ -239,26 +244,27 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
     cur_bleu_score = 0
     cur_rouge_score = 0
+    generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=DEVICE)
     
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
-    for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
-        generated_ids = None
+    for (_, x_str), (_, y_str) in test_dataloader:
         while True:
             try:
-                generated_ids = model.module.generate(x["input_ids"], num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
+                generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
-        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        
+        y_pred = [sample[0]["generated_text"] for sample in generated_text]
         
         sources_list.extend(x_str)
         sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
 
-        y_str = [[y_sentence] for y_sentence in y_str]
+        y_str = [[y_sentence] for y_sentence in x_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
         cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]

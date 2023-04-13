@@ -11,6 +11,7 @@ file_metadata_db = db["file_metadata"]
 file_metadata_db.create_index("repo_name")
 
 repo_metadata_db.create_index("full_name")
+repo_metadata_db.create_index("name")
 repo_metadata_db.create_index("id")
 
 REPO_DATA_FILE = "bq-results-joint.csv"
@@ -22,13 +23,9 @@ STATUS_ENUM = {
 
 TIME_SLEEP = 60
 
-def is_repo_used(full_name):
-    name = full_name.split("/")[-1]
-    return file_metadata_db.find_one({"repo_name": {"$regex" : name}})
-
 def get_repos():
     with open(REPO_DATA_FILE, "r") as fd:
-        lines = fd.read().splitlines()[1:]
+        lines = fd.read().splitlines()[-20:]
     
     return [line.split(",") for line in lines]
     
@@ -38,7 +35,7 @@ if __name__ == "__main__":
     for i, (full_name, url) in enumerate(pb):
         pb.set_postfix_str(full_name)
         doc = repo_metadata_db.find_one({"full_name" : full_name})
-        if doc is not None or not is_repo_used(full_name):
+        if doc is not None:
             continue
         
         doc = repo_metadata_db.insert_one({

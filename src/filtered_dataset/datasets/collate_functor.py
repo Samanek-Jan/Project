@@ -17,5 +17,12 @@ class CollateFunctor:
         x_str, y_str = zip(*samples)
         
         x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt").to(DEVICE)
+        y = deepcopy(x["input_ids"][:,1:])
+        # replace padding token id's of the labels by -100 so it's ignored by the loss
+        y = torch.hstack([y, torch.full((len(y), 1), self.tokenizer.pad_token_id).to(DEVICE)])
+        y[y == self.tokenizer.pad_token_id] = -100
+        y = y.to(DEVICE)
             
-        return (x, x_str), (x["input_ids"], y_str)
+            
+        return (x, x_str), (y, y_str)
+        # return {**x, "labels" : y["input_ids"]}

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import datasets
 import tokenizers
-from src.gpt_2.datasets.config import DEVICE
+from src.bert.datasets.config import DEVICE
 import random
 
 class LocalDataSampler():

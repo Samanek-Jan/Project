@@ -1,23 +1,23 @@
 from collections import OrderedDict
 import torch
 import transformers
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, pipeline, set_seed
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, AutoModelForCausalLM, BertLMHeadModel, pipeline, set_seed
 
 from src.gpt_2.datasets.config import DEVICE
 
 MAX_SIZE = 500
-name = "gpt2"
-tokenizer = GPT2Tokenizer.from_pretrained(name, use_fast=False, model_max_length=MAX_SIZE, add_bos_token=True)
-tokenizer.add_special_tokens({
-    "bos_token" : "<bos>",
-    "eos_token" : "<eos>",
-    "pad_token" : "<pad>"
-})
+name = "bert-base-uncased"
+tokenizer = AutoTokenizer.from_pretrained(name, use_fast=False, model_max_length=MAX_SIZE, add_bos_token=True)
+# tokenizer.add_special_tokens({
+#     "bos_token" : "<bos>",
+#     "eos_token" : "<eos>",
+#     "pad_token" : "<pad>"
+# })
 
-tokenizer.add_tokens(["<bot>"])
+# tokenizer.add_tokens(["<bot>"])
 
 # configuration = AutoConfig.from_pretrained(name)
-model = AutoModelForCausalLM.from_pretrained(name)
+model = BertLMHeadModel.from_pretrained(name, is_decoder=True)
 # model.resize_token_embeddings(len(tokenizer))
 # model = AutoModelForCausalLM.from_config(configuration)
 # model_dict = torch.load(f"/tmp/xsaman02/gpt2/{name}_pretrained.current.pt")
@@ -33,6 +33,10 @@ text_input = """
 // param4: int row_size
 // param5: int col_size
 __device__ matrixMul(float** A, float** B, float** out, int row_size, int col_size)
+""".strip()
+
+text_input = """
+Hi, how are you?
 """.strip()
 
 generator = pipeline('text-generation', model=model, tokenizer=tokenizer)

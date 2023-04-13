@@ -27,3 +27,5 @@ a.out
 data/*
 utils/repo_metadata.json
 test.cu
+skipped_repos.json
+utils/addon.json

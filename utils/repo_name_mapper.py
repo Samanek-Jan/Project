@@ -8,15 +8,15 @@ import io
 import time
 from typing import List
 
-input_file = "~/Project/utils/addon.csv"
-meta_data_file = "addon.json"
+input_file = "bq-results-joint.csv"
+meta_data_file = "repo_name_mapper.json"
 
 
 df = pd.read_csv(input_file)
 
 ARCHIVE_PREFIX = "https://github.com/"
 ARCHIVE_SUFFIX = "/archive/refs/heads/master.zip"
-output_folder = "/tmp/xsaman02"
+output_folder = "../data/raw"
 meta_data = {}
 
 with open("skipped_repos.json", "w") as fd:
@@ -55,5 +55,5 @@ with open("skipped_repos.json", "w") as fd:
 
             except Exception as e:
                 fd.write(f"{name},\t\t{str(e)}\n")
-        json.dump(meta_data, md, indent=2)
+        json.dump(meta_data, md)
         
