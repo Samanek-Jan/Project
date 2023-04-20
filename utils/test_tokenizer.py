@@ -1,6 +1,6 @@
 from transformers import AutoConfig, AutoTokenizer, GPT2Model, GPT2Tokenizer
 
-TOKENIZER_NAME = "gpt2"
+TOKENIZER_NAME = "t5-small"
 
 DATA = """"
 using T = int;
@@ -30,11 +30,13 @@ __host__ __inline__ void init()
 """
 
 if __name__ == "__main__":
-    tokenizer = GPT2Tokenizer.from_pretrained(TOKENIZER_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+    tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
+    
     print(len(tokenizer))
     x = tokenizer(DATA)
     
-    print(decoded := tokenizer.batch_decode([x["input_ids"]])[0])
+    print(decoded := tokenizer.batch_decode([x["input_ids"]])[0].replace(";", ";\n").replace("{", "{\n").replace("}", "}\n"))
     print("sequence is same: ", decoded == DATA)
     
     

@@ -11,13 +11,21 @@ import argparse
 import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, GPT2Tokenizer, GPT2LMHeadModel, GPT2Config
-from src.gpt_2.datasets.config import DEVICE
-from src.gpt_2.datasets.collate_functor import CollateFunctor
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, GPT2Tokenizer, GPT2LMHeadModel, GPT2Config, pipeline
 
-from src.gpt_2.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, WARMUP_DURATION
-from src.gpt_2.datasets.github_dataset.remote_dataset import RemoteDataset
-from src.gpt_2.datasets.local_dataset.local_dataset import LocalDataset
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.distributed import init_process_group, destroy_process_group
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+
+from src.codeGen.datasets.config import DEVICE
+from src.codeGen.datasets.collate_functor import CollateFunctor
+from src.codeGen.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODEL_NAME, WARMUP_DURATION
+from src.codeGen.datasets.github_dataset.remote_dataset import RemoteDataset
+from src.codeGen.datasets.local_dataset.local_dataset import LocalDataset
+from src.codeGen.trainer import *
 
 pretraining = False
 
@@ -29,69 +37,59 @@ def format_memory_int(number : int) -> str:
     elif number > 1e3:
         return "{:.2f}KB".format(number/1e3)
     return "{}B".format(number)
+
+
+def main(rank: int, world_size: int, save_every: int, total_epochs: int, batch_size: int, model_d = None):
     
-def main():
-    print(f"Using {DEVICE}")
-    global pretraining
-    argument_parser = argparse.ArgumentParser("Training and testing script")
-    argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
-    argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
-    argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
-    argument_parser.add_argument("--model_name", "-m", type=str, default="distilgpt2")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="distilgpt2")
-    argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
-    argument_parser.add_argument("--model", "-d", type=str, default=None)
-    args = argument_parser.parse_args()
+    ddp_setup(rank, world_size)
     
-    pretraining = args.pretraining
-    # Downloading a model configuration
-    configuration = GPT2Config.from_pretrained(args.model_name)
+    configuration = AutoConfig.from_pretrained(MODEL_NAME)
     configuration.max_length = MAX_SEQUENCE_SIZE
-    tokenizer = GPT2Tokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True, padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side='left')
     tokenizer.add_special_tokens({
         "pad_token" : tokenizer.eos_token
     })
-    
     # Initializing model
     model = None
     optimizer = None
     model_dict = {}
-    if args.model is not None:
+    if model_d is not None:
         model = AutoModelForCausalLM.from_config(configuration).to(DEVICE)
-        model_dict = torch.load(args.model)
+        model_dict = torch.load(model_d)
         # model_state_dict = OrderedDict()
         # for key, val in model_dict["model_dict"].items():
         #     model_state_dict[".".join(key.split(".")[1:])] = val
             
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = GPT2LMHeadModel.from_pretrained(args.model_name).to(DEVICE)
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME).to(DEVICE)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 
-    # if DEVICE != "cpu" and torch.cuda.device_count() > 1:
-    #     print("Using", torch.cuda.device_count(), "GPUs!")
-    #     model = nn.DataParallel(model)
-
-    
-    collate_f = CollateFunctor(tokenizer)
     
     if pretraining:
-        train_dataset = RemoteDataset(tokenizer, args.epoch_size)
+        train_dataset = RemoteDataset(tokenizer, total_epochs)
         valid_dataset = LocalDataset(tokenizer, "valid")
     else:
         train_dataset = LocalDataset(tokenizer, "train")
         valid_dataset = LocalDataset(tokenizer, "valid")
-        
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_f) # type: ignore
-    valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_f) # type: ignore
-        
+    
+    collate_fn = CollateFunctor(tokenizer)
+    
+    train_dataloader = prepare_dataloader(train_dataset, BATCH_SIZE, collate_fn)
+    valid_dataloader = prepare_dataloader(valid_dataset, BATCH_SIZE, collate_fn)
+    
+    
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
-    
-    train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_name=args.model_name, output_folder=args.output_folder, model_d=model_dict)
-    print("Done")
+    try:
+        trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, rank, save_every, 5, total_epochs)
+        trainer.train()
+    except:
+        ...
+    finally:
+        destroy_process_group()
 
 
 def train_and_test(model,
@@ -101,7 +99,7 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 5,
+                   eval_every_n = 10,
                    model_d = {}):
     
     global pretraining
@@ -135,7 +133,7 @@ def train_and_test(model,
             print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
             if bleu >= bv_bleu:
                 best_version = {
-                    "model_dict" : model.state_dict(),
+                    "model_dict" : model.module.state_dict(),
                     "optimizer_dict" : optimizer.state_dict(),
                     "loss_list" : loss_list,
                     "BLEU_list" : bleu_list,
@@ -193,7 +191,7 @@ def train_and_test(model,
                 a = torch.cuda.memory_allocated(0)
                 pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
             
-            loss = torch.mean(torch.unsqueeze(prediction.loss, 0))
+            # loss = torch.mean(torch.unsqueeze(prediction.loss, 0))
             prediction = torch.argmax(prediction.logits, -1)
             
             prediction_str = tokenizer.batch_decode(prediction.tolist(), skip_special_tokens=True)
@@ -201,7 +199,7 @@ def train_and_test(model,
             
             pbar.set_description(f"epoch: [{epoch}/{epoch_n}], loss = {loss.item():.4f}")
             epoch_loss.append(float(loss.item()))
-            loss.backward()
+            prediction.loss.backward()
             optimizer.step()
             # break
         
@@ -215,7 +213,7 @@ def train_and_test(model,
         
         # Save current version
         current_version = {
-                    "model_dict" : model.state_dict(),
+                    "model_dict" : model.module.state_dict(),
                     "optimizer_dict" : optimizer.state_dict(),
                     "loss_list" : loss_list,
                     "BLEU_list" : bleu_list,
@@ -231,50 +229,6 @@ def train_and_test(model,
     return best_version
 
 
-@torch.no_grad()
-def evaluate(model, test_dataloader, pbar_prefix=""):
-    model.eval()
-    sources_list = []
-    sentences_target = []
-    sentences_pred = []
-    tokenizer = test_dataloader.dataset.datasampler.tokenizer
-
-    test_dataloader = tqdm(test_dataloader, leave=False)
-
-    bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
-    cur_bleu_score = 0
-    cur_rouge_score = 0
-    
-    # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
-    for (x, x_str), (_, y_str) in test_dataloader:
-        generated_ids = None
-        while True:
-            try:
-                generated_ids = model.generate(**x, num_beams=1, min_length=0, max_length=MAX_SEQUENCE_SIZE, do_sample=False)
-            except Exception as e:
-                if type(e) != OutOfMemoryError:
-                    raise e
-                torch.cuda.empty_cache()
-                continue
-            break
-        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-        
-        sources_list.extend(x_str)
-        sentences_target.extend(y_str)
-        sentences_pred.extend(y_pred)
-
-        y_str = [[y_sentence] for y_sentence in x_str]
-        bleu_score.update(y_pred, y_str)
-        cur_bleu_score = bleu_score.compute()
-        cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
-        
-        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, cur_rouge_score))
-        
-        # break
-    
-    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(cur_bleu_score, cur_rouge_score))
-    
-    return float(cur_bleu_score), float(cur_rouge_score), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0
@@ -287,4 +241,11 @@ def get_n_params(model):
 
 
 if __name__ == "__main__":
-    main()
+    print(f"Using {DEVICE}")
+    argument_parser = argparse.ArgumentParser("Training and testing script")
+    argument_parser.add_argument("--epoch_n", "-n", type=int, default=1)
+    argument_parser.add_argument("--model", "-d", type=str, default=None)
+    args = argument_parser.parse_args()
+    
+    world_size = torch.cuda.device_count()
+    mp.spawn(main, args=(world_size, 1, args.epoch_n, BATCH_SIZE, args.model), nprocs=world_size)

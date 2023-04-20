@@ -15,7 +15,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 from src.bert.datasets.config import DEVICE
 from src.bert.datasets.collate_functor import CollateFunctor
 
-from src.bert.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, WARMUP_DURATION
+from src.bert.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, PAD_TOKEN, WARMUP_DURATION
 from src.bert.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.bert.datasets.local_dataset.local_dataset import LocalDataset
 
@@ -38,7 +38,7 @@ def main():
     argument_parser.add_argument("--pretraining", "-p", action='store_const', default=pretraining, const=not(pretraining))
     argument_parser.add_argument("--epoch_size", "-i", type=int, default=20000)
     argument_parser.add_argument("--model_name", "-m", type=str, default="bert-base-uncased")
-    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="bert-base-uncased")
+    argument_parser.add_argument("--tokenizer_name", "-t", type=str, default="gpt2")
     argument_parser.add_argument("--output_folder", "-o", type=str, default=MODELS_OUT_FOLDER)
     argument_parser.add_argument("--model", "-d", type=str, default=None)
     args = argument_parser.parse_args()
@@ -49,7 +49,9 @@ def main():
     configuration.max_length = MAX_SEQUENCE_SIZE
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side='left')
     tokenizer.add_special_tokens({
-        "pad_token" : tokenizer.eos_token
+        "bos_token" : BOS_TOKEN,
+        "eos_token" : EOS_TOKEN,
+        "pad_token" : PAD_TOKEN
     })
     
     # Initializing model
@@ -68,6 +70,7 @@ def main():
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = BertLMHeadModel.from_pretrained(args.model_name, is_decoder=True).to(DEVICE)
+        model.resize_token_embeddings(len(tokenizer))
         optimizer = transformers.AdamW(model.parameters(), lr=LR)
 
     if DEVICE != "cpu" and torch.cuda.device_count() > 1:

@@ -59,7 +59,7 @@ class LocalDataset(torch.utils.data.Dataset):
 
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
 if __name__ == "__main__":
-    tokenizer = AutoTokenizer.from_pretrained("Salesforce/codegen-350M-mono", use_fast=False, model_max_length=512, add_bos_token=True)
+    tokenizer = AutoTokenizer.from_pretrained("t5-small", use_fast=False, model_max_length=512, add_bos_token=True)
     tokenizer.add_special_tokens({
         # "bos_token" : BOS_TOKEN,
         # "eos_token" : EOS_TOKEN,

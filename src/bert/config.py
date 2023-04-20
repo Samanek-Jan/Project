@@ -9,8 +9,13 @@ random.seed(SEED)
 # LR = 5e-4
 LR = 1e-4
 WARMUP_DURATION = 3
-BATCH_SIZE = 5
+BATCH_SIZE = 10
 
 MODELS_OUT_FOLDER = "./"
+
+UNK_TOKEN = "$unk$"
+PAD_TOKEN = "$pad$"
+EOS_TOKEN = "$eos$"
+BOS_TOKEN = "$bos$"
 
 MAX_SEQUENCE_SIZE = 900

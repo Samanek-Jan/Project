@@ -11,7 +11,7 @@ import argparse
 import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 from src.bart.datasets.config import DEVICE
 from src.bart.datasets.collate_functor import CollateFunctor
 
@@ -60,11 +60,11 @@ def main():
             model_state_dict[".".join(key.split(".")[1:])] = val
             
         model.load_state_dict(model_state_dict)
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     if torch.cuda.device_count() > 1:
         print("Using", torch.cuda.device_count(), "GPUs!")

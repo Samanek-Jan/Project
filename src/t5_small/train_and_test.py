@@ -10,7 +10,7 @@ import argparse
 import transformers
 import json
 from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 from src.t5_small.datasets.config import DEVICE
 from src.t5_small.datasets.collate_functor import CollateFunctor
 
@@ -49,6 +49,7 @@ def main():
     # MAX_SEQUENCE_SIZE = configuration.n_positions
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
+    tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
     
     # Initializing model
     model = None
@@ -56,13 +57,15 @@ def main():
     model_dict = {}
     if args.model is not None:
         model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
+        model.resize_token_embeddings(len(tokenizer))
         model_dict = torch.load(args.model)
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        model.resize_token_embeddings(len(tokenizer))
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 
     if torch.cuda.device_count() > 1:
         print("Using", torch.cuda.device_count(), "GPUs!")
@@ -238,18 +241,22 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     cur_bleu_score = 0
     cur_rouge_score = 0
     
+    # generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=DEVICE)
+    
+    
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = None
         while True:
             try:
-                generated_ids = model.generate(x["input_ids"], num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
+                generated_ids = model.generate(**x, max_new_tokens=MAX_SEQUENCE_SIZE, do_sample=False)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
+        
         y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         
         sources_list.extend(x_str)

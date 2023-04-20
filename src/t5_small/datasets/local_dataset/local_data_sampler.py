@@ -22,8 +22,8 @@ class LocalDataSampler():
 
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
 
-        kernel_x = ("supplement code:" + kernel.get("comment", "") + "" + kernel.get("header", "")).replace("\n", " ")
-        kernel_y = kernel.get("body", "").replace("\n", " ")
+        kernel_x = ("supplement code:" + kernel.get("comment", "") + "" + kernel.get("header", ""))
+        kernel_y = kernel.get("body", "")
             
         return kernel_x, kernel_y
 

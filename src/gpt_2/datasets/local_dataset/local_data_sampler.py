@@ -9,7 +9,6 @@ import random
 class LocalDataSampler():
     
     def __init__(self, tokenizer, part : str):
-        self.kernel_prefix = "Generate CUDA function defined as:\n"
         self.part = part
         self.tokenizer = tokenizer
         
@@ -21,13 +20,13 @@ class LocalDataSampler():
 
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
         
-        x = self.kernel_prefix + kernel.get("comment", "") + "\n" + kernel.get("header", "") + "<bot>"
+        x = kernel.get("comment", "") + "\n" + kernel.get("header", "") + "<bot>"
         y = kernel.get("body", "")
         
         if self.part == "valid":
-            return self.wrap_sample(x), self.wrap_sample(x + "\n" + y)
+            return self.tokenizer.bos_token + x, self.wrap_sample(x + "\n" + y)
         else:
-            return self.wrap_sample(x + "\n" + y) , self.wrap_sample(y)
+            return self.wrap_sample(x + "\n" + y) , y + self.tokenizer.eos_token
 
     def sample(self, kernel):
         return self.validate_and_tokenize_kernel(kernel)

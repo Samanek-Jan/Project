@@ -64,11 +64,11 @@ def main():
         #     model_state_dict[".".join(key.split(".")[1:])] = val
             
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = GPT2LMHeadModel.from_pretrained(args.model_name).to(DEVICE)
-        optimizer = transformers.AdamW(model.parameters(), lr=LR)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 
     # if DEVICE != "cpu" and torch.cuda.device_count() > 1:
     #     print("Using", torch.cuda.device_count(), "GPUs!")
@@ -101,7 +101,7 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 5,
+                   eval_every_n = 10,
                    model_d = {}):
     
     global pretraining
@@ -247,24 +247,26 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
     generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=DEVICE)
     
     # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
-    for (_, x_str), (_, y_str) in test_dataloader:
+    for (x, x_str), (_, y_str) in test_dataloader:
+        generated_ids = None
         while True:
             try:
-                generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
+                generated_ids = model.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
+                # generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
-        
-        y_pred = [sample[0]["generated_text"] for sample in generated_text]
+        y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        # y_pred = [sample[0]["generated_text"] for sample in generated_text]
         
         sources_list.extend(x_str)
         sentences_target.extend(y_str)
         sentences_pred.extend(y_pred)
 
-        y_str = [[y_sentence] for y_sentence in x_str]
+        y_str = [[y_sentence] for y_sentence in y_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
         cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
