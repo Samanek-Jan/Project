@@ -39,7 +39,7 @@ def format_memory_int(number : int) -> str:
     return "{}B".format(number)
 
 
-def main(rank: int, world_size: int, save_every: int, total_epochs: int, batch_size: int, model_d = None):
+def main(rank: int, world_size: int, save_every: int, total_epochs: int, model_d = None):
     
     ddp_setup(rank, world_size)
     
@@ -56,10 +56,6 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, batch_s
     if model_d is not None:
         model = AutoModelForCausalLM.from_config(configuration).to(DEVICE)
         model_dict = torch.load(model_d)
-        # model_state_dict = OrderedDict()
-        # for key, val in model_dict["model_dict"].items():
-        #     model_state_dict[".".join(key.split(".")[1:])] = val
-            
         model.load_state_dict(model_dict["model_dict"])
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
@@ -75,7 +71,7 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, batch_s
         train_dataset = LocalDataset(tokenizer, "train")
         valid_dataset = LocalDataset(tokenizer, "valid")
     
-    collate_fn = CollateFunctor(tokenizer)
+    collate_fn = CollateFunctor(tokenizer, rank)
     
     train_dataloader = prepare_dataloader(train_dataset, BATCH_SIZE, collate_fn)
     valid_dataloader = prepare_dataloader(valid_dataset, BATCH_SIZE, collate_fn)
@@ -85,9 +81,9 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, batch_s
     print(f"Model params num. = {param_n}")
     try:
         trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, rank, save_every, 5, total_epochs)
-        trainer.train()
-    except:
-        ...
+        trainer.train(model_dict)
+    except Exception as e:
+        raise e
     finally:
         destroy_process_group()
 
@@ -248,4 +244,4 @@ if __name__ == "__main__":
     args = argument_parser.parse_args()
     
     world_size = torch.cuda.device_count()
-    mp.spawn(main, args=(world_size, 1, args.epoch_n, BATCH_SIZE, args.model), nprocs=world_size)
+    mp.spawn(main, args=(world_size, 1, args.epoch_n, args.model), nprocs=world_size)

@@ -9,13 +9,14 @@ from src.gpt_2.config import MAX_SEQUENCE_SIZE
 
 
 class CollateFunctor:
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, rank):
         self.tokenizer = tokenizer
+        self.device = torch.device(rank)
 
     def __call__(self, samples: list):
         
         x_str, y_str = zip(*samples)
         
-        x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt")
+        x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt").to(self.device)
             
         return (x, list(x_str)), (x["input_ids"], list(y_str))

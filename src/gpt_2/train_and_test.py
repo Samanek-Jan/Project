@@ -193,7 +193,7 @@ def train_and_test(model,
                 a = torch.cuda.memory_allocated(0)
                 pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
             
-            loss = torch.mean(torch.unsqueeze(prediction.loss, 0))
+            loss = prediction.loss
             prediction = torch.argmax(prediction.logits, -1)
             
             prediction_str = tokenizer.batch_decode(prediction.tolist(), skip_special_tokens=True)

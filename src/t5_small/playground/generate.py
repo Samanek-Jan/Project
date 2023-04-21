@@ -32,10 +32,10 @@ text_input = """
 __global__ void matrixMultiplication(float* A, float* B, float* out, int row_size, int col_size)
 """.strip()
 
-text_input = """
-answer question:
-Hi, how are you?
-""".strip()
+#text_input = """
+#answer question:
+#Hi, how are you?
+#""".strip()
 
 # generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
 # set_seed(1)
