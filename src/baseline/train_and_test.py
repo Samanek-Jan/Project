@@ -18,6 +18,7 @@ from src.baseline.datasets.config import DEVICE
 from src.baseline.datasets.collate_functor import CollateFunctor
 from src.baseline.model import Model
 from src.baseline.search import GreedySearch
+from src.baseline.trainer import Trainer, prepare_dataloader
 
 
 def format_memory_int(number : int) -> str:
@@ -42,8 +43,8 @@ def main():
         "pad_token" : "<pad>"
     })
     configuration = {
-        "num_encoder_layers" : 10,
-        "num_decoder_layers" : 8,
+        "num_encoder_layers" : 6,
+        "num_decoder_layers" : 6,
         "hidden_size" : 512,
         "num_heads" : 8,
         "dropout" : 0.1
@@ -51,16 +52,17 @@ def main():
     # Initializing model
     model = None
     optimizer = None
-    model_dict = {}
+    model_dict = {"configuration" : configuration}
     loss_fce = torch.nn.CrossEntropyLoss(ignore_index=-1)
     if args.model is not None:
         model_dict = torch.load(args.model)
-        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
         model.load_state_dict(model_dict["model_dict"])
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = Model(configuration).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
+        # model = Model(configuration).to(DEVICE)
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 
     collate_f = CollateFunctor(tokenizer)
@@ -68,11 +70,15 @@ def main():
     train_dataset = LocalDataset(tokenizer, "train")
     valid_dataset = LocalDataset(tokenizer, "valid")
         
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True, collate_fn=collate_f) # type: ignore
-    valid_dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, pin_memory=True, collate_fn=collate_f) # type: ignore
-        
+    train_dataloader = prepare_dataloader(train_dataset, BATCH_SIZE, collate_f)
+    valid_dataloader = prepare_dataloader(valid_dataset, BATCH_SIZE, collate_f)
+    
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
+    
+    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, 5, args.epoch_n)
+    trainer.train(model_dict)
+
     
     train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_d=model_dict)
     print("Done")

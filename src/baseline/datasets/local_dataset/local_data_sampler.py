@@ -15,15 +15,13 @@ class LocalDataSampler():
     def __call__(self, kernel):
         if self.sampling_type == "NSP":
             return self.sample_NSP(kernel)
-        # elif self.sampling_type == "MLM":
-        #     return self.sample_MLM(kernel)
         else:
             raise ValueError("DataSampler.__call__: Unknown sampling type: %s" % self.sampling_type)
 
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
 
         kernel_x = ("supplement code:" + kernel.get("comment", "") + "" + kernel.get("header", ""))
-        kernel_y = kernel.get("body", "")
+        kernel_y = self.tokenizer.bos_token + kernel.get("body", "") + self.tokenizer.eos_token
             
         return kernel_x, kernel_y
 
