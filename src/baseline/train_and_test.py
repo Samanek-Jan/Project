@@ -16,7 +16,7 @@ from baseline.datasets.local_dataset.local_dataset import LocalDataset
 from src.baseline.config import LR, MAX_SEQUENCE_SIZE, OUTPUT_FOLDER, TOKENIZER_NAME, WARMUP_DURATION, BATCH_SIZE
 from src.baseline.datasets.config import DEVICE
 from src.baseline.datasets.collate_functor import CollateFunctor
-from src.baseline.transformer import Transformer
+from src.baseline.model import Model
 from src.baseline.search import GreedySearch
 
 
@@ -52,14 +52,15 @@ def main():
     model = None
     optimizer = None
     model_dict = {}
+    loss_fce = torch.nn.CrossEntropyLoss(ignore_index=-1)
     if args.model is not None:
         model_dict = torch.load(args.model)
-        model = Transformer(model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, model_dict.get("configuration")).to(DEVICE)
         model.load_state_dict(model_dict["model_dict"])
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = Transformer(configuration).to(DEVICE)
+        model = Model(configuration).to(DEVICE)
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 
     collate_f = CollateFunctor(tokenizer)

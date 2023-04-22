@@ -71,6 +71,8 @@ class Trainer:
         pbar = tqdm(iter(self.train_data), leave=False)
         epoch_loss = 0
         for (x, _), (y, _) in pbar:
+            x = x.to(f"cuda:{self.gpu_id}")
+            y = y.to(f"cuda:{self.gpu_id}")
             loss = self._run_batch(x, y)
             pbar.set_description_str(f"{pbar_prefix} - loss = {loss:.4f}")
             epoch_loss += loss

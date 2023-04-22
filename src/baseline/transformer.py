@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from src.baseline.datasets.config import DEVICE
 
 class Transformer(nn.Module):
-    def __init__(self, configuration):
+    def __init__(self, **configuration):
         super().__init__()
         self.configuration = configuration
         self.encoder = Encoder(configuration.get("num_encoder_layers"), configuration.get("hidden_size"), configuration.get("num_heads"), configuration.get("dropout"))
