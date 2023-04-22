@@ -36,11 +36,12 @@ class LocalDataset(torch.utils.data.Dataset):
         return self.len
     
     def __getitem__(self, i):
-        for doc in self.cursor:
-            return self.datasampler(doc)
-        
-        self._cache()
-        return self.__getitem__(i)
+        try:
+            for doc in self.cursor:
+                return self.datasampler(doc)
+        except:
+            self._cache()
+            return self.__getitem__(i)
     
     def __next__(self):
         return self.__getitem__(0)
