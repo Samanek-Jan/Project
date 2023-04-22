@@ -22,8 +22,9 @@ class LocalDataset(torch.utils.data.Dataset):
         self.match_query = {"metadata.header_cuda_prefixes" : "__global__", "metadata.correct_syntax" : True}
                 
         self.len = self.db.count_documents(self.match_query)
-        
         print(f"{part} dataset found {self.len} matching docs")
+        if self.len == 0:
+            raise Exception("No data found.")
         self._cache()
 
     def _cache(self):

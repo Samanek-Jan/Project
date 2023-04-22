@@ -186,7 +186,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, hidden_size, max_len=256):
+    def __init__(self, hidden_size, max_len=1024):
         super(PositionalEncoding, self).__init__()
 
         pe = torch.zeros(max_len, hidden_size)  # shape: [T, D]

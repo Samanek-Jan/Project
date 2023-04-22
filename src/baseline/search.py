@@ -10,23 +10,22 @@ class GreedySearch:
         self.tokenizer = tokenizer
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id("[BOSCUDA]")
-        self.bos_cpp_id = tokenizer.token_to_id("[BOSCPP]")
-        self.eos_id = tokenizer.token_to_id("[EOS]")
-        self.pad_id = tokenizer.token_to_id("[PAD]")
+        self.bos_token_id = tokenizer.bos_token_id
+        self.eos_token_id = tokenizer.eod_token_id
+        self.pad_token_id = tokenizer.pad_token_id
 
     @torch.no_grad()
-    def __call__(self, source, source_mask, cuda_mask):
+    def __call__(self, source, source_mask):
         source_encoding = self.model.encode_source(source, source_mask).to(DEVICE)
         
-        target = torch.where(cuda_mask == True, self.bos_cuda_id, self.bos_cpp_id).unsqueeze(-1).to(DEVICE)
+        target = torch.full((len(source_mask),), self.bos_token_id).unsqueeze(-1).to(DEVICE)
         # target = torch.full([source_encoding.size(0), 1], fill_value=self.sos_id).to(DEVICE)
         stop = torch.zeros(target.size(0), dtype=torch.bool, device=target.device)
 
         for _ in range(self.max_length):
             prediction = self.model.decode_step(source_encoding, source_mask, target)
-            prediction = torch.where(stop, self.pad_id, prediction.argmax(-1))
-            stop |= prediction == self.eos_id
+            prediction = torch.where(stop, self.pad_token_id, prediction.argmax(-1))
+            stop |= prediction == self.eos_token_id
 
             target = torch.cat([target, prediction.unsqueeze(1)], dim=1).to(DEVICE)
 
@@ -46,7 +45,7 @@ class BeamSearch:
 
         self.bos_cuda_id = tokenizer.token_to_id("[BOSCUDA]")
         self.bos_cpp_id = tokenizer.token_to_id("[BOSCPP]")
-        self.eos_id = tokenizer.token_to_id("[EOS]")
+        self.eos_token_id = tokenizer.token_to_id("[EOS]")
         self.vocab_size = tokenizer.get_vocab_size()
 
     @torch.no_grad()
@@ -86,7 +85,7 @@ class BeamSearch:
 
             for batch in range(batch_size):
                 for subword, beam, score in zip(next_subword[batch], previous_batch[batch], logp[batch]):
-                    if subword == self.eos_id:
+                    if subword == self.eos_token_id:
                         if len(candidates[batch]) < self.beam_size:
                             candidates[batch].append((target[batch * self.beam_size + beam, :], score / (length + 1)))
                     else:

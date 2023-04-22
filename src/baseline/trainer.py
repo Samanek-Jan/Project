@@ -9,7 +9,10 @@ from torch.cuda import OutOfMemoryError
 from torchmetrics.functional.text.rouge import rouge_score
 import torchmetrics
 
-from src.codeGen.config import MAX_SEQUENCE_SIZE
+from src.baseline.config import MAX_SEQUENCE_SIZE
+from src.baseline.datasets.config import DEVICE
+from src.baseline.search import GreedySearch
+
 
 class Trainer:
     def __init__(
@@ -18,26 +21,22 @@ class Trainer:
         train_data: DataLoader,
         test_data: DataLoader,
         optimizer: torch.optim.Optimizer,
-        gpu_id: int,
-        save_every: int,
         eval_every: int,
         total_epochs: int
     ) -> None:
-        self.gpu_id = gpu_id
-        self.model = model.to(gpu_id)
+        self.model = model.to(DEVICE)
         self.train_data = train_data
         self.test_data = test_data
         self.optimizer = optimizer
-        self.save_every = save_every
         self.eval_every = eval_every
         self.total_epochs = total_epochs
         self.model = model
 
-    def _run_batch(self, source, targets):
+    def _run_batch(self, x, y):
         self.optimizer.zero_grad()
         while True:
             try:
-                output = self.model(**source, labels=targets)
+                output = self.model((x["input_ids"], x["attention_mask"]), (y["input_ids"], y["attention_mask"]))
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
@@ -64,29 +63,29 @@ class Trainer:
 
     def _save_current_checkpoint(self, epoch, **kwargs):
         ckp = {
-                    "model_dict" : self.model.module.state_dict(),
+                    "model_dict" : self.model.state_dict(),
                     "optimizer_dict" : self.optimizer.state_dict(),
                     "epoch" : epoch,
                     **kwargs
                }
-        PATH = "/tmp/xsaman02/CodeGen/"
+        PATH = "/tmp/xsaman02/baseline/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"codegen.current.pt")
+        torch.save(ckp, PATH+"baseline.current.pt")
         # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
     def _save_best_checkpoint(self, epoch, eval_data, **kwargs):
         ckp = {
-                    "model_dict" : self.model.module.state_dict(),
+                    "model_dict" : self.model.state_dict(),
                     "optimizer_dict" : self.optimizer.state_dict(),
                     "epoch" : epoch,
                     **eval_data
                     **kwargs
                }
-        PATH = "/tmp/xsaman02/CodeGen/"
+        PATH = "/tmp/xsaman02/baseline/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"codegen.best.pt")
+        torch.save(ckp, PATH+"baseline.best.pt")
 
     def train(self, model_d : dict):
         epoch_loss_list = []
@@ -119,14 +118,15 @@ class Trainer:
         cur_bleu_score = 0
         cur_rouge_score = 0
         
+        searcher = GreedySearch(self.model, tokenizer, MAX_SEQUENCE_SIZE)
+        
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
             generated_ids = None
             x = x.to(f"cuda:{self.gpu_id}")
             while True:
                 try:
-                    generated_ids = self.model.module.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
-                    # generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
+                    generated_ids = searcher(x["input_ids"], x["attention_mask"])
                 except Exception as e:
                     if type(e) != OutOfMemoryError:
                         raise e
