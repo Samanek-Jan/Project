@@ -44,8 +44,8 @@ def main():
     })
     configuration = {
         "num_encoder_layers" : 6,
-        "num_decoder_layers" : 6,
-        "hidden_size" : 512,
+        "num_decoder_layers" : 5,
+        "d_model" : 512,
         "num_heads" : 8,
         "dropout" : 0.1
     }
@@ -56,12 +56,12 @@ def main():
     loss_fce = torch.nn.CrossEntropyLoss(ignore_index=-1)
     if args.model is not None:
         model_dict = torch.load(args.model)
-        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
         model.load_state_dict(model_dict["model_dict"])
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = Model(len(tokenizer), configuration.get("hidden_size"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
         # model = Model(configuration).to(DEVICE)
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
 

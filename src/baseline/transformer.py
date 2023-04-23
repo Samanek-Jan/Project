@@ -9,8 +9,8 @@ class Transformer(nn.Module):
     def __init__(self, **configuration):
         super().__init__()
         self.configuration = configuration
-        self.encoder = Encoder(configuration.get("num_encoder_layers"), configuration.get("hidden_size"), configuration.get("num_heads"), configuration.get("dropout"))
-        self.decoder = Decoder(configuration.get("num_decoder_layers"), configuration.get("hidden_size"), configuration.get("num_heads"), configuration.get("dropout"))
+        self.encoder = Encoder(configuration.get("num_encoder_layers"), configuration.get("d_model"), configuration.get("num_heads"), configuration.get("dropout"))
+        self.decoder = Decoder(configuration.get("num_decoder_layers"), configuration.get("d_model"), configuration.get("num_heads"), configuration.get("dropout"))
 
     def forward(self, source, source_padding_mask, target, target_padding_mask):
         memory = self.encoder(source, source_padding_mask)
@@ -19,12 +19,12 @@ class Transformer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_layers, hidden_size, num_heads, dropout):
+    def __init__(self, num_layers, d_model, num_heads, dropout):
         super().__init__()
         self.layers = nn.ModuleList(
-            [EncoderLayer(hidden_size, num_heads, dropout) for _ in range(num_layers)]
+            [EncoderLayer(d_model, num_heads, dropout) for _ in range(num_layers)]
         )
-        self.output_norm = nn.LayerNorm(hidden_size)
+        self.output_norm = nn.LayerNorm(d_model)
 
     def forward(self, x, x_padding_mask):
         for layer in self.layers:
@@ -121,13 +121,13 @@ class FeedForward(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, hidden_size, num_heads, dropout):
+    def __init__(self, hiden_size, num_heads, dropout):
         super().__init__()
-        self.hidden_size = hidden_size
+        self.hidden_size = hiden_size
         self.num_heads = num_heads
         assert self.hidden_size % self.num_heads == 0
 
-        self.positional_embedding = PositionalEncoding(hidden_size)
+        self.positional_embedding = PositionalEncoding(self.hidden_size)
 
         self.query = nn.Linear(self.hidden_size, self.hidden_size)
         self.key = nn.Linear(self.hidden_size, self.hidden_size)
@@ -167,12 +167,14 @@ class MultiHeadAttention(nn.Module):
         attention_weights = attention_weights * self.scale
 
         if key_padding_mask is not None:
-            attention_weights = attention_weights.masked_fill(
+            # key_padding_mask.type(torch.bool)
+            attention_weights = attention_weights.masked_fill_(
                 key_padding_mask.view(batch_size, 1, 1, key_len).to(DEVICE), value=float("-inf")
             )
         if attention_mask is not None:
             # NOTE: this is where the attention_mask is used
-            attention_weights = attention_weights.masked_fill(
+            # attention_mask.type(torch.bool)
+            attention_weights = attention_weights.masked_fill_(
                 attention_mask.view(1, 1, query_len, key_len).to(DEVICE), value=float("-inf")
             )
 

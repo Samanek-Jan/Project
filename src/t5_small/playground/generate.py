@@ -17,13 +17,13 @@ configuration = AutoConfig.from_pretrained(name)
 # model = AutoModelForSeq2SeqLM.from_pretrained(name)
 model = AutoModelForSeq2SeqLM.from_config(configuration)
 model.resize_token_embeddings(len(tokenizer))
-model_dict = torch.load(f"/tmp/xsaman02/models/t5-small/{name}_pretrained.current.pt")
+model_dict = torch.load(f"/tmp/xsaman02/models/t5-small/{name}_pretrained.current.pt", map_location="cpu")
 model.load_state_dict(model_dict["model_dict"])
 
 # print(DEVICE)
 
 text_input = """
-"supplement code:// function for matrix multiplication
+"supplement code:// function for matrix multiplication with __shared__ memory
 // param1: float** A
 // param2: float** B
 // param3: float** out

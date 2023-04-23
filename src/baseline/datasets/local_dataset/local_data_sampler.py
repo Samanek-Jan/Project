@@ -21,8 +21,8 @@ class LocalDataSampler():
     def validate_and_tokenize_kernel(self, kernel : dict) -> str:
 
         kernel_x = ("supplement code:" + kernel.get("comment", "") + "" + kernel.get("header", ""))
-        kernel_y = self.tokenizer.bos_token + kernel.get("body", "") + self.tokenizer.eos_token
-            
+        kernel_y = kernel.get("body", "") + self.tokenizer.eos_token
+
         return kernel_x, kernel_y
 
     def sample_NSP(self, kernel):

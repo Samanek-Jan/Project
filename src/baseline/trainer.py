@@ -34,9 +34,13 @@ class Trainer:
 
     def _run_batch(self, x, y):
         self.optimizer.zero_grad()
+        x_ids, x_mask = ({**x}.values())
+        y_ids, y_mask = ({**y}.values())
+        loss = None
         while True:
             try:
-                output = self.model((x["input_ids"], x["attention_mask"]), (y["input_ids"], y["attention_mask"]))
+                with torch.autocast(DEVICE if DEVICE == "cpu" else "cuda"):
+                    _, loss = self.model((x_ids, x_mask), (y_ids, y_mask))
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
@@ -44,7 +48,6 @@ class Trainer:
                 continue
             break
         
-        loss = output.loss
         loss.backward()
         self.optimizer.step()
         return loss.item()
@@ -52,9 +55,11 @@ class Trainer:
     def _run_epoch(self, epoch):
         self.model.train()
         pbar_prefix = f"[{epoch}/{self.total_epochs}]"
-        pbar = tqdm(iter(self.train_data), leave=False)
+        pbar = tqdm(self.train_data, leave=True)
         epoch_loss = 0
         for (x, _), (y, _) in pbar:
+            x = x.to(DEVICE)
+            y = y.to(DEVICE)
             loss = self._run_batch(x, y)
             pbar.set_description_str(f"{pbar_prefix} - loss = {loss:.4f}")
             epoch_loss += loss
@@ -97,12 +102,10 @@ class Trainer:
         for epoch in range(last_epoch, self.total_epochs+1):
             if epoch % self.eval_every == 0 and epoch > 1:
                 eval_data = self.evaluate()
-                if self.gpu_id == 0:
-                    self._save_best_checkpoint(epoch, eval_data, loss_list=epoch_loss_list)
+                self._save_best_checkpoint(epoch, eval_data, loss_list=epoch_loss_list)
             
             epoch_loss_list.append(self._run_epoch(epoch))
-            if self.gpu_id == 0 and epoch % self.save_every == 0:
-                self._save_current_checkpoint(epoch, loss_list=epoch_loss_list)
+            self._save_current_checkpoint(epoch, loss_list=epoch_loss_list)
                 
     @torch.no_grad()
     def evaluate(self):
@@ -123,7 +126,7 @@ class Trainer:
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
             generated_ids = None
-            x = x.to(f"cuda:{self.gpu_id}")
+            x = x.to(DEVICE)
             while True:
                 try:
                     generated_ids = searcher(x["input_ids"], x["attention_mask"])
@@ -166,6 +169,5 @@ def prepare_dataloader(dataset: Dataset, batch_size: int, collate_fn):
         dataset,
         batch_size=batch_size,
         pin_memory=True,
-        sampler=dataset,
         collate_fn=collate_fn
     )

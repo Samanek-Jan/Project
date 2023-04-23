@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import torch
 import transformers
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, pipeline, set_seed
+from transformers import AutoConfig, CodeGenForCausalLM, AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, pipeline, set_seed
 
 from src.codeGen.config import MODEL_NAME
 
@@ -13,10 +13,10 @@ tokenizer.add_special_tokens({
 
 
 configuration = AutoConfig.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-# model = AutoModelForCausalLM.from_config(configuration)
-# model_dict = torch.load(f"/tmp/xsaman02/CodeGen/codegen.current.pt", map_location="cpu")
-# model.load_state_dict(model_dict["model_dict"])
+# model = CodeGenForCausalLM.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_config(configuration)
+model_dict = torch.load(f"/tmp/xsaman02/CodeGen/codegen.current.pt", map_location="cpu")
+model.load_state_dict(model_dict["model_dict"])
 
 # print(DEVICE)
 

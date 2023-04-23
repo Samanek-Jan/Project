@@ -1,8 +1,9 @@
 import torch
 import random
 import os, sys
+import time
 
-SEED = 123456
+SEED = time.time()
 random.seed(SEED)
 
 TOKENIZER_NAME = "gpt2"
@@ -11,7 +12,7 @@ TOKENIZER_NAME = "gpt2"
 # LR = 5e-4
 LR = 1e-3
 WARMUP_DURATION = 3
-BATCH_SIZE = 20
+BATCH_SIZE = 23
 
 UNK_TOKEN = "$unk$"
 PAD_TOKEN = "$pad$"
