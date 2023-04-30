@@ -35,30 +35,45 @@ class Trainer:
         self.total_epochs = total_epochs
         self.model = model
         
+        self.loss_count = 0
         self.scaler = GradScaler()
 
-    def _run_batch(self, x, y):
+    def _run_batch(self, x, y, cumulative_loss_step=3):
         self.optimizer.zero_grad()
-        x_ids, x_mask = ({**x}.values())
-        y_ids, y_mask = ({**y}.values())
-        loss = None
+        torch.cuda.empty_cache()
+        # x_ids, x_mask = ({**x}.values())
+        # y_ids, y_mask = ({**y}.values())
+        preds = None
         while True:
             try:
                 with torch.autocast(DEVICE if DEVICE == "cpu" else "cuda"):
-                    _, loss = self.model((x_ids, x_mask), (y_ids, y_mask))
+                    preds = self.model(**x, labels=y)
+
+                # with torch.autocast(DEVICE if DEVICE == "cpu" else "cuda"):
+                #     losses.append(preds.loss)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
-        self.scaler.scale(loss).backward()
+        
+        # preds.loss.backward()        
+        # self.optimizer.step()
+        # Backward pass
+        # loss = preds.loss / cumulative_loss_step
+        self.scaler.scale(preds.loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
-        # loss.backward()
-        # self.optimizer.step()
         self.scheduler.step()
-        return loss.item()
+        
+        # if self.loss_count >= cumulative_loss_step:
+        #     self.scaler.step(self.optimizer)
+        #     self.scaler.update()
+        #     # self.optimizer.step()
+        #     self.scheduler.step()
+        #     self.loss_count = 0
+        return preds.loss.item()
 
     def _run_epoch(self, epoch):
         self.model.train()
@@ -81,41 +96,39 @@ class Trainer:
                     "epoch" : epoch,
                     **kwargs
                }
-        PATH = "/tmp/xsaman02/baseline/"
+        PATH = "/tmp/xsaman02/gpt2/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"baseline.current.pt")
+        torch.save(ckp, PATH+"gpt2.current.pt")
         # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
-    def _save_best_checkpoint(self, epoch, **kwargs):
+    def _save_best_checkpoint(self, epoch, eval_data, **kwargs):
         ckp = {
                     "model_dict" : self.model.state_dict(),
                     "optimizer_dict" : self.optimizer.state_dict(),
                     "epoch" : epoch,
+                    **eval_data
                     **kwargs
                }
-        PATH = "/tmp/xsaman02/baseline/"
+        PATH = "/tmp/xsaman02/gpt2/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"baseline.best.pt")
+        torch.save(ckp, PATH+"gpt2.best.pt")
 
     def train(self, model_d : dict):
+        epoch_loss_list = []
         last_epoch = 1
         if model_d is not None:
-            if model_d.get("loss_list") is None:
-                model_d["loss_list"] = []
-            if model_d.get("epoch") is None:
-                model_d["epoch"] = 0
-                
+            epoch_loss_list = model_d.get("loss_list", [])
             last_epoch = model_d.get("epoch", 0)+1
             
         for epoch in range(last_epoch, self.total_epochs+1):
             if epoch % self.eval_every == 0 and epoch > 1:
                 eval_data = self.evaluate()
-                self._save_best_checkpoint(epoch, **eval_data, loss_list=model_d["loss_list"], configuration=model_d["configuration"])
+                self._save_best_checkpoint(epoch, eval_data, loss_list=epoch_loss_list, configuration=model_d)
             
-            model_d["loss_list"].append(self._run_epoch(epoch))
-            self._save_current_checkpoint(epoch, loss_list=model_d["loss_list"], configuration=model_d["configuration"])
+            epoch_loss_list.append(self._run_epoch(epoch))
+            self._save_current_checkpoint(epoch, loss_list=epoch_loss_list, configuration=model_d)
                 
     @torch.no_grad()
     def evaluate(self):
@@ -130,8 +143,7 @@ class Trainer:
         bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
         cur_bleu_score = 0
         cur_rouge_score = 0
-        
-        searcher = GreedySearch(self.model, tokenizer, MAX_SEQUENCE_SIZE)
+    
         
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
@@ -139,14 +151,14 @@ class Trainer:
             x = x.to(DEVICE)
             while True:
                 try:
-                    y_pred = searcher(x["input_ids"], x["attention_mask"])
+                    generated_ids = self.model.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
                 except Exception as e:
                     if type(e) != OutOfMemoryError:
                         raise e
                     torch.cuda.empty_cache()
                     continue
                 break
-            # y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+            y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)

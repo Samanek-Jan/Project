@@ -1,7 +1,7 @@
 import transformers
 from transformers import AutoConfig
 
-NAME = "t5-small"
+NAME = "Salesforce/codegen-350M-multi"
 
 config = AutoConfig.from_pretrained(NAME)
 pass

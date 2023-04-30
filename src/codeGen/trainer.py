@@ -6,6 +6,7 @@ import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group
+from torch.cuda.amp import autocast, GradScaler
 import os
 from tqdm import tqdm
 
@@ -33,6 +34,7 @@ class Trainer:
         train_data: DataLoader,
         test_data: DataLoader,
         optimizer: torch.optim.Optimizer,
+        scheduler,
         gpu_id: int,
         save_every: int,
         eval_every: int,
@@ -43,32 +45,35 @@ class Trainer:
         self.train_data = train_data
         self.test_data = test_data
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.save_every = save_every
         self.eval_every = eval_every
         self.total_epochs = total_epochs
         self.model = DDP(model, device_ids=[gpu_id])
+        
+        self.scaler = GradScaler()
 
     def _run_batch(self, source, targets):
         self.optimizer.zero_grad()
-        while True:
-            try:
-                output = self.model(**source, labels=targets)
-            except Exception as e:
-                if type(e) != OutOfMemoryError:
-                    raise e
-                torch.cuda.empty_cache()
-                continue
-            break
-        
+        torch.cuda.empty_cache()
+
+        with autocast():
+            output = self.model(**source, labels=targets)
+
         loss = output.loss
-        loss.backward()
-        self.optimizer.step()
+        # Backward pass
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        self.scheduler.step()
+        # loss.backward()
+        # self.optimizer.step()
         return loss.item()
 
     def _run_epoch(self, epoch):
         self.model.train()
         pbar_prefix = f"[{epoch}/{self.total_epochs}]"
-        pbar = tqdm(iter(self.train_data), leave=False)
+        pbar = tqdm(self.train_data, leave=False)
         epoch_loss = 0
         for (x, _), (y, _) in pbar:
             x = x.to(f"cuda:{self.gpu_id}")
@@ -77,12 +82,14 @@ class Trainer:
             pbar.set_description_str(f"{pbar_prefix} - loss = {loss:.4f}")
             epoch_loss += loss
         
+        
         return epoch_loss / self.train_data.__len__()
 
     def _save_current_checkpoint(self, epoch, **kwargs):
         ckp = {
                     "model_dict" : self.model.module.state_dict(),
                     "optimizer_dict" : self.optimizer.state_dict(),
+                    "scheduler_dict" : self.scheduler.state_dict(),
                     "epoch" : epoch,
                     **kwargs
                }
@@ -96,6 +103,7 @@ class Trainer:
         ckp = {
                     "model_dict" : self.model.module.state_dict(),
                     "optimizer_dict" : self.optimizer.state_dict(),
+                    "scheduler_dict" : self.scheduler.state_dict(),
                     "epoch" : epoch,
                     **eval_data
                     **kwargs
@@ -110,7 +118,7 @@ class Trainer:
         last_epoch = 1
         if model_d is not None:
             epoch_loss_list = model_d.get("loss_list", [])
-            last_epoch = model_d.get("epoch", 1)
+            last_epoch = model_d.get("epoch", 0) + 1
             
         for epoch in range(last_epoch, self.total_epochs+1):
             if epoch % self.eval_every == 0 and epoch > 1:

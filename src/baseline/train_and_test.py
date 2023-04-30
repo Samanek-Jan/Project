@@ -39,15 +39,16 @@ def main():
     
     
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
+    # tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
     tokenizer.add_special_tokens({
         "pad_token" : "<pad>"
     })
     configuration = {
-        "num_encoder_layers" : 6,
-        "num_decoder_layers" : 5,
-        "d_model" : 512,
-        "num_heads" : 8,
-        "dropout" : 0.1
+        "num_encoder_layers" : 4,
+        "num_decoder_layers" : 3,
+        "d_model" : 500,
+        "nhead" : 5,
+        "dropout" : 0.3
     }
     # Initializing model
     model = None
@@ -56,14 +57,14 @@ def main():
     loss_fce = torch.nn.CrossEntropyLoss(ignore_index=-1)
     if args.model is not None:
         model_dict = torch.load(args.model)
-        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, configuration).to(DEVICE)
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, **model_dict.get("configuration")).to(DEVICE)
+        model = Model(len(tokenizer), configuration.get("d_model"), loss_fce, tokenizer.pad_token_id, configuration).to(DEVICE)
         # model = Model(configuration).to(DEVICE)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.005)
 
     collate_f = CollateFunctor(tokenizer)
     
@@ -76,7 +77,13 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, 5, args.epoch_n)
+    scheduler = transformers.get_constant_schedule_with_warmup(                
+        optimizer = optimizer,
+        num_warmup_steps = WARMUP_DURATION,
+        last_epoch=model_dict.get("epoch", -1)
+    )
+    
+    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 40, args.epoch_n)
     trainer.train(model_dict)
 
     

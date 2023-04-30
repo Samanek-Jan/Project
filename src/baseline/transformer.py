@@ -3,12 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.baseline.datasets.config import DEVICE
 
 class Transformer(nn.Module):
-    def __init__(self, **configuration):
+    def __init__(self, configuration):
         super().__init__()
-        self.configuration = configuration
         self.encoder = Encoder(configuration.get("num_encoder_layers"), configuration.get("d_model"), configuration.get("num_heads"), configuration.get("dropout"))
         self.decoder = Decoder(configuration.get("num_decoder_layers"), configuration.get("d_model"), configuration.get("num_heads"), configuration.get("dropout"))
 
@@ -169,13 +167,13 @@ class MultiHeadAttention(nn.Module):
         if key_padding_mask is not None:
             # key_padding_mask.type(torch.bool)
             attention_weights = attention_weights.masked_fill_(
-                key_padding_mask.view(batch_size, 1, 1, key_len).to(DEVICE), value=float("-inf")
+                key_padding_mask.view(batch_size, 1, 1, key_len).to(queries.device), value=float("-inf")
             )
         if attention_mask is not None:
             # NOTE: this is where the attention_mask is used
             # attention_mask.type(torch.bool)
             attention_weights = attention_weights.masked_fill_(
-                attention_mask.view(1, 1, query_len, key_len).to(DEVICE), value=float("-inf")
+                attention_mask.view(1, 1, query_len, key_len).to(queries.device), value=float("-inf")
             )
 
         attention_probs = torch.softmax(attention_weights, dim=-1)

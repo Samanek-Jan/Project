@@ -23,13 +23,21 @@ model.load_state_dict(model_dict["model_dict"])
 # print(DEVICE)
 
 text_input = """
-"supplement code:// function for matrix multiplication with __shared__ memory
+"supplement code:// function for matrix multiplication
 // param1: float** A
 // param2: float** B
 // param3: float** out
 // param4: int row_size
 // param5: int col_size
 __global__ void matrixMultiplication(float* A, float* B, float* out, int row_size, int col_size)
+""".strip()
+
+text_input = """
+"supplement code:
+// Function for adding vectors
+// Takes vector v1 and v2 and sum element-wise to the out vector
+// Each vector has size of parameter size
+__global__ void addVectors(float* v1, float* v2, float* out, int size)
 """.strip()
 
 #text_input = """

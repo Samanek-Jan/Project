@@ -23,7 +23,12 @@ class LocalDataSampler():
         x = kernel.get("comment", "") + "\n" + kernel.get("header", "")
         y = kernel.get("body", "")
         
-        return x, self.wrap_sample(y)
+        if self.part == "valid":
+            return self.tokenizer.bos_token + x, x + "\n" + y
+        else:
+            return self.wrap_sample(x + "\n" + y), x + "\n" + y
+        
+        # return x, self.wrap_sample(y)
         
         # if self.part == "valid":
         #     return self.tokenizer.bos_token + x, self.wrap_sample(x + "\n" + y)

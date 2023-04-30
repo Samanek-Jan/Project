@@ -9,16 +9,16 @@ MAX_SIZE = 500
 name = "gpt2"
 tokenizer = GPT2Tokenizer.from_pretrained(name, use_fast=False, model_max_length=MAX_SIZE, add_bos_token=True)
 tokenizer.add_special_tokens({
-    "pad_token" : tokenizer.eos_token
+    "pad_token" : "<pad>"
 })
 
 # tokenizer.add_tokens(["<bot>"])
 
-configuration = AutoConfig.from_pretrained(name)
+configuration = AutoConfig.from_pretrained("distilgpt2")
 model = AutoModelForCausalLM.from_pretrained(name)
 model.resize_token_embeddings(len(tokenizer))
 model = AutoModelForCausalLM.from_config(configuration)
-model_dict = torch.load(f"/tmp/xsaman02/gpt2/{name}_pretrained.current.pt")
+model_dict = torch.load(f"/tmp/xsaman02/gpt2/{name}.current.pt")
 model.load_state_dict(model_dict["model_dict"])
 
 # print(DEVICE)
@@ -30,7 +30,7 @@ text_input = """
 // param3: float** out
 // param4: int row_size
 // param5: int col_size
-__global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)<bot>
+__global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)
 """.strip()
 
 # text_input = """

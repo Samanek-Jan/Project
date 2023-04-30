@@ -14,16 +14,16 @@ class Model(nn.Module):
                  embedding_dim : int, 
                  loss_fce : Callable, 
                  pad_id : int,
-                 **transformer_kwargs):
+                 transformer_kwargs):
         super().__init__()
         self.embedding = nn.Embedding(num_embedding, embedding_dim, padding_idx=pad_id)
         self.embedding.weight.data /= math.sqrt(embedding_dim)  # descale the weights
-        # self.transformer = torch.nn.Transformer(dim_feedforward=512, **transformer_kwargs, batch_first=True, norm_first=True, device=DEVICE)
-        self.transformer = Transformer(**transformer_kwargs)
-        self.head = nn.Linear(transformer_kwargs["d_model"], num_embedding)
+        self.transformer = torch.nn.Transformer(dim_feedforward=embedding_dim, **transformer_kwargs, batch_first=True, norm_first=True, device=DEVICE)
+        # self.transformer = Transformer(transformer_kwargs)
+        self.head = nn.Linear(embedding_dim, num_embedding)
         # self.head.weight = self.embedding.weight
         self.head.weight.data /= math.sqrt(embedding_dim)
-        # self.softmax = nn.Softmax(dim=-1)
+        self.softmax = nn.Softmax(dim=-1)
         self.loss_fce = loss_fce
         self.pad_id = pad_id
 
@@ -35,8 +35,8 @@ class Model(nn.Module):
         y_tgt_ids = self.embedding(y_ids[:,:-1])
         y_tgt_mask = y_mask[:,:-1].to(DEVICE)
         
-        # preds = self.transformer(x_ids, y_tgt_ids, src_key_padding_mask=x_mask, tgt_key_padding_mask=y_tgt_mask)
-        preds = self.transformer(x_ids, x_mask, y_tgt_ids, y_tgt_mask)
+        preds = self.transformer(x_ids, y_tgt_ids, src_key_padding_mask=x_mask, tgt_key_padding_mask=y_tgt_mask)
+        # preds = self.transformer(x_ids, x_mask, y_tgt_ids, y_tgt_mask)
         preds = self.head(preds)
         # source_encoding = self.encode_source(x_ids, x_mask)
         

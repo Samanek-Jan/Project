@@ -21,10 +21,10 @@ model.load_state_dict(model_dict["model_dict"])
 # print(DEVICE)
 
 text_input = """
-// function for matrix multiplication
-// param1: float** A
-// param2: float** B
-// param3: float** out
+// function for matrix mul
+// param1: float* A
+// param2: float* B
+// param3: float* out
 // param4: int row_size
 // param5: int col_size
 __global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)

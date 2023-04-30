@@ -16,15 +16,16 @@ class LocalDataset(torch.utils.data.Dataset):
         else:
             self.db = mongoDB["cuda_snippets"]["validation"]
         
-        self.db.create_index("index")
-        self.db.create_index("validation.compiled")
+        # self.db.create_index("index")
+        self.db.create_index("metadata.uses_local_mem")
             
-        self.match_query = {}
+        # self.match_query = {}
+        self.match_query = {"metadata.uses_local_mem" : True}
                 
         self.len = self.db.count_documents(self.match_query)
         print(f"{part} dataset found {self.len} matching docs")
-        if self.len == 0:
-            raise Exception("No data found.")
+        # if self.len == 0:
+        #     raise Exception("No data found.")
         self._cache()
 
     def _cache(self):

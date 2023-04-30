@@ -2,23 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.baseline.datasets.config import DEVICE
 
 class GreedySearch:
-    def __init__(self, model, tokenizer, max_length=128):
+    def __init__(self, model, tokenizer, max_length=128, **kwargs):
         self.model = model
         self.tokenizer = tokenizer
         self.max_length = max_length
 
         self.bos_token_id = tokenizer.bos_token_id
-        self.eos_token_id = tokenizer.eod_token_id
+        self.eos_token_id = tokenizer.eos_token_id
         self.pad_token_id = tokenizer.pad_token_id
 
     @torch.no_grad()
     def __call__(self, source, source_mask):
-        source_encoding = self.model.encode_source(source, source_mask).to(DEVICE)
+        source_encoding = self.model.encode_source(source, source_mask).to(source.device)
         
-        target = torch.full((len(source_mask),), self.bos_token_id).unsqueeze(-1).to(DEVICE)
+        target = torch.full((len(source_mask),), self.bos_token_id).unsqueeze(-1).to(source.device)
         # target = torch.full([source_encoding.size(0), 1], fill_value=self.sos_id).to(DEVICE)
         stop = torch.zeros(target.size(0), dtype=torch.bool, device=target.device)
 
@@ -27,12 +26,12 @@ class GreedySearch:
             prediction = torch.where(stop, self.pad_token_id, prediction.argmax(-1))
             stop |= prediction == self.eos_token_id
 
-            target = torch.cat([target, prediction.unsqueeze(1)], dim=1).to(DEVICE)
+            target = torch.cat([target, prediction.unsqueeze(1)], dim=1).to(source.device)
 
             if stop.all():
                 break
 
-        sentences = self.tokenizer.decode_batch(target.tolist(), skip_special_tokens=True)
+        sentences = self.tokenizer.batch_decode(target.tolist(), skip_special_tokens=True)
         return sentences
 
 
@@ -43,20 +42,18 @@ class BeamSearch:
         self.beam_size = beam_size
         self.max_length = max_length
 
-        self.bos_cuda_id = tokenizer.token_to_id("[BOSCUDA]")
-        self.bos_cpp_id = tokenizer.token_to_id("[BOSCPP]")
-        self.eos_token_id = tokenizer.token_to_id("[EOS]")
-        self.vocab_size = tokenizer.get_vocab_size()
+        self.bos_token_id = tokenizer.bos_token_id
+        self.eos_token_id = tokenizer.eos_token_id
+        self.vocab_size = len(tokenizer)
 
     @torch.no_grad()
-    def __call__(self, source, source_mask, cuda_mask):
+    def __call__(self, source, source_mask):
         batch_size = source.size(0)
         source_encoding = self.model.encode_source(source, source_mask)
 
         candidates = [[] for _ in range(batch_size)]
 
-        # target = torch.full([batch_size, 1], fill_value=self.sos_id, device=source.device)
-        target = torch.where(cuda_mask == True, self.bos_cuda_id, self.bos_cpp_id).unsqueeze(-1).to(DEVICE)
+        target = torch.full([batch_size, 1], fill_value=self.bos_token_id, device=source.device)
         prediction = self.model.decode_step(source_encoding, source_mask, target).squeeze(0)
         prediction = F.log_softmax(prediction, dim=-1)
         prediction = torch.topk(prediction, self.beam_size, dim=-1)  # shape: [batch, beam]

@@ -16,6 +16,9 @@ class CollateFunctor:
         
         x_str, y_str = zip(*samples)
         
-        x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt").to(DEVICE)
-            
+        x_str_joined = self.tokenizer.eos_token.join(x_str) + self.tokenizer.eos_token
+        
+        x = self.tokenizer(x_str_joined, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt")
+        x["attention_mask"] = x["attention_mask"].type(torch.bool)
+
         return (x, list(x_str)), (x["input_ids"], list(y_str))
