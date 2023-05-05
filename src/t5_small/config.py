@@ -9,13 +9,12 @@ random.seed(SEED)
 # LR = 5e-4
 LR = 1e-4
 WARMUP_DURATION = 3
-BATCH_SIZE = 20
+BATCH_SIZE = 5
 
-MODELS_OUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp/xsaman02/models/t5_small")
-
+MODELS_OUT_FOLDER = "./"
 UNK_TOKEN = "$unk$"
 PAD_TOKEN = "$pad$"
 EOS_TOKEN = "$eos$"
 BOS_TOKEN = "$bos$"
 
-MAX_SEQUENCE_SIZE = 512
+MAX_SEQUENCE_SIZE = 550

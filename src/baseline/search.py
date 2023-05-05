@@ -22,7 +22,7 @@ class GreedySearch:
         stop = torch.zeros(target.size(0), dtype=torch.bool, device=target.device)
 
         for _ in range(self.max_length):
-            prediction = self.model.decode_step(source_encoding, source_mask, target)
+            prediction = self.model.decode_step(source_encoding, source_mask, target)[:,-1,:]
             prediction = torch.where(stop, self.pad_token_id, prediction.argmax(-1))
             stop |= prediction == self.eos_token_id
 

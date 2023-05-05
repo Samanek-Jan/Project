@@ -9,7 +9,7 @@ from torch.distributed import init_process_group
 from torch.cuda.amp import autocast, GradScaler
 import os
 from tqdm import tqdm
-
+from transformers import pipeline, set_seed
 from torch.cuda import OutOfMemoryError
 from torchmetrics.functional.text.rouge import rouge_score
 import torchmetrics
@@ -57,18 +57,12 @@ class Trainer:
         self.optimizer.zero_grad()
         torch.cuda.empty_cache()
 
-        with autocast():
-            output = self.model(**source, labels=targets)
+        # with autocast():
+        output = self.model(**source, labels=targets)
 
-        loss = output.loss
-        # Backward pass
-        self.scaler.scale(loss).backward()
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        self.scheduler.step()
-        # loss.backward()
-        # self.optimizer.step()
-        return loss.item()
+        output.loss.backward()
+        self.optimizer.step()
+        return output.loss.item()
 
     def _run_epoch(self, epoch):
         self.model.train()
@@ -81,54 +75,48 @@ class Trainer:
             loss = self._run_batch(x, y)
             pbar.set_description_str(f"{pbar_prefix} - loss = {loss:.4f}")
             epoch_loss += loss
-        
+        self.scheduler.step()
         
         return epoch_loss / self.train_data.__len__()
 
-    def _save_current_checkpoint(self, epoch, **kwargs):
-        ckp = {
-                    "model_dict" : self.model.module.state_dict(),
-                    "optimizer_dict" : self.optimizer.state_dict(),
-                    "scheduler_dict" : self.scheduler.state_dict(),
-                    "epoch" : epoch,
-                    **kwargs
-               }
+    def _save_current_checkpoint(self, **kwargs):
+        ckp = {**kwargs}
         PATH = "/tmp/xsaman02/CodeGen/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
         torch.save(ckp, PATH+"codegen.current.pt")
         # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
-    def _save_best_checkpoint(self, epoch, eval_data, **kwargs):
+    def _save_evaluated_checkpoint(self, eval_data, **kwargs):
         ckp = {
-                    "model_dict" : self.model.module.state_dict(),
-                    "optimizer_dict" : self.optimizer.state_dict(),
-                    "scheduler_dict" : self.scheduler.state_dict(),
-                    "epoch" : epoch,
                     **eval_data
                     **kwargs
                }
         PATH = "/tmp/xsaman02/CodeGen/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"codegen.best.pt")
+        torch.save(ckp, PATH+"codegen.evaluated.pt")
 
     def train(self, model_d : dict):
-        epoch_loss_list = []
-        last_epoch = 1
-        if model_d is not None:
-            epoch_loss_list = model_d.get("loss_list", [])
-            last_epoch = model_d.get("epoch", 0) + 1
+        if model_d is None:
+            model_d = {"epoch" : 0, "loss_list" : []}
+        elif model_d.get("loss_list") is None:
+            model_d["loss_list"] = []
             
-        for epoch in range(last_epoch, self.total_epochs+1):
-            if epoch % self.eval_every == 0 and epoch > 1:
+        for epoch in range(model_d.get("epoch", 0) + 1, self.total_epochs+1):
+            model_d["epoch"] = epoch
+            model_d["model_dict"] = self.model.state_dict()
+            model_d["optimizer_dict"] = self.optimizer.state_dict()
+            model_d["scheduler_dict"] = self.scheduler.state_dict()
+            
+            if epoch % self.eval_every == 0:
                 eval_data = self.evaluate()
                 if self.gpu_id == 0:
-                    self._save_best_checkpoint(epoch, eval_data, loss_list=epoch_loss_list)
+                    self._save_evaluated_checkpoint(eval_data, **model_d)
             
-            epoch_loss_list.append(self._run_epoch(epoch))
+            model_d.get("loss_list").append(self._run_epoch(epoch))            
             if self.gpu_id == 0 and epoch % self.save_every == 0:
-                self._save_current_checkpoint(epoch, loss_list=epoch_loss_list)
+                self._save_current_checkpoint(**model_d)
                 
     @torch.no_grad()
     def evaluate(self):
@@ -143,14 +131,16 @@ class Trainer:
         bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
         cur_bleu_score = 0
         cur_rouge_score = 0
+        generator = pipeline('text-generation', model=self.model.module, tokenizer=tokenizer, device=f"cuda:{self.gpu_id}")
         
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
-            generated_ids = None
+            # generated_ids = None
             x = x.to(f"cuda:{self.gpu_id}")
             while True:
                 try:
-                    generated_ids = self.model.module.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
+                    y_pred = [sample["generated_text"] for sample in generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)]
+                    # generated_ids = self.model.module.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
                     # generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
                 except Exception as e:
                     if type(e) != OutOfMemoryError:
@@ -158,19 +148,19 @@ class Trainer:
                     torch.cuda.empty_cache()
                     continue
                 break
-            y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+            # y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)
             sentences_target.extend(y_str)
             sentences_pred.extend(y_pred)
-            cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_recall"]
+            # cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_recall"]
 
             y_str = [[y_sentence] for y_sentence in y_str]
             bleu_score.update(y_pred, y_str)
             cur_bleu_score = bleu_score.compute()
             
-            test_dataloader.set_description("BLEU: {:.3f}, ROUGE: {:.3f}".format(cur_bleu_score, cur_rouge_score))
+            test_dataloader.set_description("BLEU: {:.3f}".format(cur_bleu_score))
             
             # break
         

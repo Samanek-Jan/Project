@@ -15,11 +15,11 @@ tokenizer.add_special_tokens({
 
 
 model_dict = torch.load("/tmp/xsaman02/baseline/baseline.current.pt", map_location=DEVICE)
-configuration = model_dict.get("configuration").get("configuration")
-model = Model(len(tokenizer), configuration.get("d_model"), None, tokenizer.pad_token_id, configuration)
+configuration = model_dict.get("configuration")
+model = Model(len(tokenizer), configuration.get("d_model"), None, tokenizer.pad_token_id, tokenizer.bos_token_id, configuration).cpu()
 model.load_state_dict(model_dict["model_dict"])
 
-searcher = GreedySearch(model, tokenizer, beam_size=2, max_length=512)
+searcher = GreedySearch(model, tokenizer, max_length=512)
 
 
 text_input = """

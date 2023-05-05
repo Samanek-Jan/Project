@@ -60,11 +60,11 @@ def main():
             model_state_dict[".".join(key.split(".")[1:])] = val
             
         model.load_state_dict(model_state_dict)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+        optimizer = transformers.AdamW(model.parameters(), lr=LR)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+        optimizer = transformers.AdamW(model.parameters(), lr=LR)
 
     if torch.cuda.device_count() > 1:
         print("Using", torch.cuda.device_count(), "GPUs!")

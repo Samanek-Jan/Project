@@ -45,28 +45,42 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, model_d
     
     configuration = AutoConfig.from_pretrained(MODEL_NAME)
     configuration.max_length = MAX_SEQUENCE_SIZE
-    configuration.summary_first_dropout = 0.4
-    configuration.resid_pdrop = 0.4
+    configuration.summary_first_dropout = 0.2
+    configuration.resid_pdrop = 0.2
     configuration.embd_pdrop = 0.1
-    configuration.attn_pdrop = 0.4
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side='left')
+    configuration.attn_pdrop = 0.2
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False)
+    tokenizer.padding_side = "left"
+    tokenizer.model_max_length=MAX_SEQUENCE_SIZE
     tokenizer.add_special_tokens({
-        "pad_token" : "</pad>"
+        "pad_token" : "</s>"
     })
     
     # Initializing model
     model = None
     optimizer = None
     model_dict = {}
+    
     if model_d is not None:
         model = AutoModelForCausalLM.from_config(configuration).to(DEVICE+f":{rank}")
         model_dict = torch.load(model_d,map_location="cpu")
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
+        optimizer = transformers.AdamW(model.parameters(), lr=LR, weight_decay=0.005, no_deprecation_warning=True)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = CodeGenForCausalLM.from_pretrained(MODEL_NAME).to(DEVICE+f":{rank}")
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
+        model = CodeGenForCausalLM._from_config(configuration).to(DEVICE+f":{rank}")
+        optimizer = transformers.AdamW(model.parameters(), lr=LR, weight_decay=0.005, no_deprecation_warning=True)
+        model_d = {"epoch" : 0, "loss_list" : []}
+        
+    scheduler = transformers.get_linear_schedule_with_warmup(                
+            optimizer = optimizer,
+            num_warmup_steps = WARMUP_DURATION,
+            num_training_steps = total_epochs,
+            last_epoch=model_d.get("epoch", 0) if model_d.get("epoch", 0) > 0 else -1
+    )
+    
+    if model_d.get("scheduler_dict") is not None:
+        scheduler.load_state_dict(model_d.get("scheduler_dict"))
 
     
     if pretraining:
@@ -80,12 +94,6 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, model_d
     
     train_dataloader = prepare_dataloader(train_dataset, BATCH_SIZE, collate_fn)
     valid_dataloader = prepare_dataloader(valid_dataset, BATCH_SIZE, collate_fn)
-    
-    scheduler = transformers.get_constant_schedule_with_warmup(                
-        optimizer = optimizer,
-        num_warmup_steps = WARMUP_DURATION,
-        last_epoch=model_dict.get("epoch", -1)
-    )
     
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")

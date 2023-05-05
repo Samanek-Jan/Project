@@ -45,11 +45,12 @@ def main():
     pretraining = args.pretraining
     # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
+    configuration.max_length = MAX_SEQUENCE_SIZE
     # global MAX_SEQUENCE_SIZE
     # MAX_SEQUENCE_SIZE = configuration.n_positions
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
-    tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
+    # tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
     
     # Initializing model
     model = None
@@ -58,18 +59,14 @@ def main():
     if args.model is not None:
         model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
         model.resize_token_embeddings(len(tokenizer))
-        model_dict = torch.load(args.model)
+        model_dict = torch.load(args.model, map_location="cpu")
         model.load_state_dict(model_dict["model_dict"])
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.005)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name).to(DEVICE)
+        model = AutoModelForSeq2SeqLM.from_config(configuration).to(DEVICE)
         model.resize_token_embeddings(len(tokenizer))
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=0.005)
-
-    if torch.cuda.device_count() > 1:
-        print("Using", torch.cuda.device_count(), "GPUs!")
-        model = nn.DataParallel(model)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.005)
 
     
     collate_f = CollateFunctor(tokenizer)
@@ -98,7 +95,7 @@ def train_and_test(model,
                    epoch_n,
                    model_name,
                    output_folder,
-                   eval_every_n = 5,
+                   eval_every_n = 20,
                    model_d = {}):
     
     global pretraining
@@ -125,11 +122,11 @@ def train_and_test(model,
         # Evaluation
         if epoch % eval_every_n == 0 and epoch > 1:
             pbar_prefix = f"[{epoch}/{epoch_n}]"
-            bleu, rouge, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
+            bleu, (source_sentences, target_sentences, pred_sentences) = evaluate(model, test_dataloader, pbar_prefix=pbar_prefix)
             bv_bleu = best_version["bv_BLEU"]
             bleu_list.append(bleu)
             rouge_list.append(bleu)
-            print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}, cur. Rouge = {rouge:.3f}")
+            print(f"{epoch}. best BLEU. = {bv_bleu:.3f}, cur. BLEU. = {bleu:.3f}")
             if bleu >= bv_bleu:
                 best_version = {
                     "model_dict" : model.state_dict(),
@@ -249,7 +246,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         generated_ids = None
         while True:
             try:
-                generated_ids = model.generate(**x, max_new_tokens=MAX_SEQUENCE_SIZE, do_sample=False)
+                generated_ids = model.generate(**x, num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE, do_sample=False)
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
@@ -266,15 +263,15 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         y_str = [[y_sentence] for y_sentence in y_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
-        cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
+        # cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
         
-        test_dataloader.set_description("{} BLEU: {:.3f}, ROUGE: {:.3f}".format(pbar_prefix, cur_bleu_score, cur_rouge_score))
+        test_dataloader.set_description("{} BLEU: {:.3f}".format(pbar_prefix, cur_bleu_score))
         
         # break
     
-    print("BLEU: {:.3f}, ROUGE: {:.3f}".format(cur_bleu_score, cur_rouge_score))
+    print("BLEU: {:.3f}".format(cur_bleu_score))
     
-    return float(cur_bleu_score), float(cur_rouge_score), (sources_list, sentences_target, sentences_pred)
+    return float(cur_bleu_score), (sources_list, sentences_target, sentences_pred)
 
 def get_n_params(model):
     pp=0

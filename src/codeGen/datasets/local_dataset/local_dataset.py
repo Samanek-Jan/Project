@@ -20,8 +20,8 @@ class LocalDataset(torch.utils.data.Dataset):
         self.db.create_index("index")
         self.db.create_index("validation.compiled")
             
-        self.match_query = {"metadata.header_cuda_prefixes" : "__global__", "metadata.correct_syntax" : True}
-        # self.match_query = {"metadata.correct_syntax" : True}
+        # self.match_query = {"metadata.header_cuda_prefixes" : "__global__", "metadata.correct_syntax" : True}
+        self.match_query = {"metadata.correct_syntax" : True}
         # self.match_query = {"metadata.uses_local_mem" : True}
                 
         self.len = self.db.count_documents(self.match_query)

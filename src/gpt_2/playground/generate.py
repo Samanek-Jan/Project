@@ -15,8 +15,8 @@ tokenizer.add_special_tokens({
 # tokenizer.add_tokens(["<bot>"])
 
 configuration = AutoConfig.from_pretrained("distilgpt2")
-model = AutoModelForCausalLM.from_pretrained(name)
-model.resize_token_embeddings(len(tokenizer))
+# model = AutoModelForCausalLM.from_pretrained(name)
+# model.resize_token_embeddings(len(tokenizer))
 model = AutoModelForCausalLM.from_config(configuration)
 model_dict = torch.load(f"/tmp/xsaman02/gpt2/{name}.current.pt")
 model.load_state_dict(model_dict["model_dict"])
@@ -24,20 +24,16 @@ model.load_state_dict(model_dict["model_dict"])
 # print(DEVICE)
 
 text_input = """
-// function for matrix multiplication
-// param1: float** A
-// param2: float** B
-// param3: float** out
-// param4: int row_size
-// param5: int col_size
-__global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)
+// kernels
+template <typename T>
+__global__ void clMatLinspace_kernel(IN OUT T* pA, IN T a, IN T d, int dim)
 """.strip()
 
 # text_input = """
 # Hi, how are you? <bot>
 # """.strip()
 
-generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
+generator = pipeline('text2text-generation', model=model, tokenizer=tokenizer)
 set_seed(1)
 print(generator(text_input, max_length=MAX_SIZE, num_return_sequences=1)[0]["generated_text"])
 # batch = tokenizer(text_input, return_tensors="pt", max_length=MAX_SIZE, truncation=True)
