@@ -17,8 +17,7 @@ class LocalDataset(torch.utils.data.Dataset):
         else:
             self.db = mongoDB["cuda_snippets"]["validation"]
         
-        self.db.create_index("index")
-        self.db.create_index("validation.compiled")
+        self.db.create_index("metadata.header_cuda_prefixes")
             
         # self.match_query = {"metadata.uses_local_mem" : True}
         self.match_query = {"metadata.header_cuda_prefixes" : "__global__"}

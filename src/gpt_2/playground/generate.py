@@ -18,7 +18,7 @@ configuration = AutoConfig.from_pretrained("distilgpt2")
 # model = AutoModelForCausalLM.from_pretrained(name)
 # model.resize_token_embeddings(len(tokenizer))
 model = AutoModelForCausalLM.from_config(configuration)
-model_dict = torch.load(f"/tmp/xsaman02/gpt2/{name}.current.pt")
+model_dict = torch.load(f"/mnt/c/Users/jansa/Škola/Ing_2023_zima/Diplomka/Project/models/gpt2/{name}.pcknot8.current.pt")
 model.load_state_dict(model_dict["model_dict"])
 
 # print(DEVICE)
@@ -29,11 +29,17 @@ template <typename T>
 __global__ void clMatLinspace_kernel(IN OUT T* pA, IN T a, IN T d, int dim)
 """.strip()
 
+text_input = """
+// Kernel for vector addition
+template <typename T>
+__global__ void vectorAddition(T* v1, T* v2, T* out, int size)
+""".strip()
+
 # text_input = """
 # Hi, how are you? <bot>
 # """.strip()
 
-generator = pipeline('text2text-generation', model=model, tokenizer=tokenizer)
+generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
 set_seed(1)
 print(generator(text_input, max_length=MAX_SIZE, num_return_sequences=1)[0]["generated_text"])
 # batch = tokenizer(text_input, return_tensors="pt", max_length=MAX_SIZE, truncation=True)

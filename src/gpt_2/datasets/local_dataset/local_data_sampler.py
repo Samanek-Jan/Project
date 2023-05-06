@@ -24,7 +24,7 @@ class LocalDataSampler():
         y = kernel.get("body", "")
         
         if self.part == "valid":
-            return x, self.wrap_sample(x + "\n" + y)
+            return x, y
         else:
             return (x + "\n" + y) , (y + self.tokenizer.eos_token)
 
