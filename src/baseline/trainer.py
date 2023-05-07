@@ -89,7 +89,7 @@ class Trainer:
         PATH = "/tmp/xsaman02/baseline/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"baseline.best.pt")
+        torch.save(ckp, PATH+"baseline.evaluated.pt")
 
     def train(self, model_d : dict):
         last_epoch = 1

@@ -33,7 +33,7 @@ __global__ void matrixMultiplication(float* A, float* B, float* out, int row_siz
 """.strip()
 
 text_input = """
-"supplement code:
+supplement code:
 // Function for adding vectors
 // Takes vector v1 and v2 and sum element-wise to the out vector
 // Each vector has size of parameter size
@@ -48,6 +48,7 @@ __global__ void addVectors(float* v1, float* v2, float* out, int size)
 # generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
 # set_seed(1)
 # print(generator(text_input, max_length=256, num_return_sequences=1)[0]["generated_text"])
+# print("\n\n#----------------------------#\n")
 batch = tokenizer(text_input, return_tensors="pt", max_length=MAX_SIZE, truncation=True)
 generated_ids = model.generate(**batch, max_new_tokens=MAX_SIZE, do_sample=False)
 

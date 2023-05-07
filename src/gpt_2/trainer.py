@@ -103,13 +103,12 @@ class Trainer:
         torch.save(ckp, PATH+"gpt2.current.pt")
         # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
-    def _save_evaluated_checkpoint(self, eval_data, **kwargs):
+    def _save_evaluated_checkpoint(self, **kwargs):
         ckp = {
-                **kwargs
-                **eval_data    
+                **kwargs    
             }
         
-        PATH = "./models/gpt2/"
+        PATH = "~/Project/models/gpt2/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
         torch.save(ckp, PATH+"gpt2.evaluated.pt")
@@ -133,7 +132,7 @@ class Trainer:
             
             if epoch % self.eval_every == 0 and epoch > 1:
                 eval_data = self.evaluate()
-                self._save_evaluated_checkpoint(epoch, eval_data, **model_d)
+                self._save_evaluated_checkpoint(epoch, **eval_data, **model_d)
             
             model_d.get("loss_list").append(self._run_epoch(epoch))
             self._save_current_checkpoint(epoch, **model_d)
@@ -146,7 +145,7 @@ class Trainer:
         sentences_pred = []
         tokenizer = self.test_data.dataset.datasampler.tokenizer
 
-        test_dataloader = tqdm(self.test_data, leave=False)
+        test_dataloader = tqdm(self.test_data, leave=True)
         
         set_seed(1)
         generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=DEVICE)
@@ -154,25 +153,28 @@ class Trainer:
 
         bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
         cur_bleu_score = 0
+        skipped = 0
     
         
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
-            # generated_ids = None
+            generated_ids = None
             x = x.to(DEVICE)
-            while True:
-                try:
-                    y_pred = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
-                    # generated_ids = self.model.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
-                except Exception as e:
-                    if type(e) != OutOfMemoryError:
-                        raise e
-                    torch.cuda.empty_cache()
-                    continue
-                break
+            y_pred = None
+            try:
+                y_pred = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
+                # generated_ids = self.model.generate(**x, num_beams=1, min_length=0, do_sample=False, max_new_tokens=MAX_SEQUENCE_SIZE)
+            except:
+                torch.cuda.empty_cache()
+                skipped += 1
+                test_dataloader.set_postfix_str(f"Skipped: {skipped}")
+            
+            if y_pred is None:
+                continue
+
+            # y_pred = [y_pred[len(xs_str):] for xs_str, y_pred in zip(x_str, tokenizer.batch_decode(generated_ids, skip_special_tokens=True))]            
             y_pred = [ys_pred[0]["generated_text"][len(xs_str):] for xs_str, ys_pred in zip(x_str, y_pred)]
             
-            # y_pred = [y_pred[len(xs_str):] for xs_str, y_pred in zip(x_str, tokenizer.batch_decode(generated_ids, skip_special_tokens=True))]
             # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)
@@ -184,7 +186,7 @@ class Trainer:
             bleu_score.update(y_pred, y_str)
             cur_bleu_score = bleu_score.compute()
             
-            test_dataloader.set_description("BLEU: {:.3f}".format(cur_bleu_score))
+            test_dataloader.set_description_str("BLEU: {:.3f}".format(cur_bleu_score))
             
             # break
         

@@ -64,23 +64,27 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, model_d
     if model_d is not None:
         model = AutoModelForCausalLM.from_config(configuration).to(DEVICE+f":{rank}")
         model_dict = torch.load(model_d,map_location="cpu")
-        model.load_state_dict(model_dict["model_dict"])
+        model_state_dict = OrderedDict()
+        for key, val in model_dict["model_dict"].items():
+            model_state_dict[".".join(key.split(".")[1:])] = val
+        model.load_state_dict(model_state_dict)
+        # model.load_state_dict(model_dict["model_dict"])
         optimizer = transformers.AdamW(model.parameters(), lr=LR, weight_decay=0.005, no_deprecation_warning=True)
         optimizer.load_state_dict(model_dict["optimizer_dict"])
     else:
         model = CodeGenForCausalLM._from_config(configuration).to(DEVICE+f":{rank}")
         optimizer = transformers.AdamW(model.parameters(), lr=LR, weight_decay=0.005, no_deprecation_warning=True)
-        model_d = {"epoch" : 0, "loss_list" : []}
+        model_dict = {"epoch" : 0, "loss_list" : []}
         
     scheduler = transformers.get_linear_schedule_with_warmup(                
             optimizer = optimizer,
             num_warmup_steps = WARMUP_DURATION,
             num_training_steps = total_epochs,
-            last_epoch=model_d.get("epoch", 0) if model_d.get("epoch", 0) > 0 else -1
+            last_epoch=model_dict.get("epoch", 0) if model_dict.get("epoch", 0) > 0 else -1
     )
     
-    if model_d.get("scheduler_dict") is not None:
-        scheduler.load_state_dict(model_d.get("scheduler_dict"))
+    if model_dict.get("scheduler_dict") is not None:
+        scheduler.load_state_dict(model_dict.get("scheduler_dict"))
 
     
     if pretraining:
@@ -98,7 +102,7 @@ def main(rank: int, world_size: int, save_every: int, total_epochs: int, model_d
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     try:
-        trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, rank, save_every, 100, total_epochs)
+        trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, rank, save_every, 1, total_epochs)
         trainer.train(model_dict)
     except Exception as e:
         raise e

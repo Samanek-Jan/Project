@@ -32,13 +32,13 @@ text_input = """
 __global__ void matrixMultiplication(float* A, float* B, float* out, int row_size, int col_size)
 """.strip()
 
-# text_input = """
-# "supplement code:
-# // Function for adding vectors
-# // Takes vector v1 and v2 and sum element-wise to the out vector
-# // Each vector has size of parameter size
-# __global__ void addVectors(float* v1, float* v2, float* out, int size)
-# """.strip()
+text_input = """
+"supplement code:
+// Function for adding vectors
+// Takes vector v1 and v2 and sum element-wise to the out vector
+// Each vector has size of parameter size
+__global__ void addVectors(float* v1, float* v2, float* out, int size)
+""".strip()
 
 batch = tokenizer(text_input, return_tensors="pt", max_length=MAX_SIZE, truncation=True)
 

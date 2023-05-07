@@ -24,7 +24,7 @@ class LocalDataSampler():
         y = kernel.get("body", "")
         
         if self.part == "valid":
-            return x, x + "\n" + y
+            return x, y
         else:
             return x + "\n" + y, x + "\n" + y
         

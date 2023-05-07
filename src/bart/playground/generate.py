@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import torch
 import transformers
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline, set_seed
 
 MAX_SIZE = 256
 
@@ -31,15 +31,20 @@ supplement code:// function for matrix multiplication
 __global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)
 """.strip()
 
-text_input = """
-// function for vector addition
-// param1 float* A,
-// param2 float* B
-// param3 float* out
-__global__ void matrixAdd(float* A, float* B, float* out)
-""".strip()
+# text_input = """
+# // function for vector addition
+# // param1 float* A,
+# // param2 float* B
+# // param3 float* out
+# __global__ void matrixAdd(float* A, float* B, float* out)
+# """.strip()
 
 
+
+generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
+set_seed(2)
+print(generator(text_input, max_length=MAX_SIZE, num_return_sequences=1, do_sample=False)[0]["generated_text"])
+print("\n\n#----------------------------#\n")
 
 batch = tokenizer(text_input, return_tensors="pt", max_length=MAX_SIZE, truncation=True)
 generated_ids = model.generate(batch["input_ids"], max_new_tokens=MAX_SIZE)

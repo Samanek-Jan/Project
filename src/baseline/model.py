@@ -75,11 +75,11 @@ class Model(nn.Module):
             embeddings = self.embedding(target_prefix)
             target_mask = target_prefix == self.pad_id
             # target_mask = None
-            target = self.transformer.decoder(embeddings, source_encoding, tgt_key_padding_mask=target_mask.type(torch.bool))
+            target = self.transformer.decoder(embeddings, source_encoding, tgt_key_padding_mask=target_mask.type(torch.bool), memory_key_padding_mask=source_mask.type(torch.bool))
         else:
             embeddings = self.embedding(target_prefix[0])
             target_mask = target_prefix[1]
-            target = self.transformer.decoder(embeddings, source_encoding, tgt_key_padding_mask=target_mask.type(torch.bool))
+            target = self.transformer.decoder(embeddings, source_encoding, tgt_key_padding_mask=target_mask.type(torch.bool), memory_key_padding_mask=source_mask.type(torch.bool))
         return self.head(target)
         
     
