@@ -15,11 +15,7 @@ class CollateFunctor:
         
         x_str, y_str = zip(*samples)
         
-        x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt").to(DEVICE)
-        y = self.tokenizer(y_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt").to(DEVICE)
-
-        # x = x
-        # y = y
+        x = self.tokenizer(x_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt")
+        y = self.tokenizer(y_str, max_length=MAX_SEQUENCE_SIZE, padding=True, truncation=True, return_tensors="pt")
         
         return (x, x_str), (y, y_str)
-        # return {**x, "labels" : y["input_ids"]}

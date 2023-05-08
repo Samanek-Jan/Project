@@ -6,13 +6,11 @@ import os
 from tqdm import tqdm
 
 from torch.cuda import OutOfMemoryError
-from torch.cuda.amp import autocast, GradScaler
-from torchmetrics.functional.text.rouge import rouge_score
 import torchmetrics
-from transformers import pipeline, set_seed
 
-from src.gpt_2.config import MAX_SEQUENCE_SIZE
-from src.gpt_2.datasets.config import DEVICE
+from src.bart.config import MAX_SEQUENCE_SIZE
+from src.bart.datasets.config import DEVICE
+from transformers import pipeline, set_seed
 
 
 class Trainer:
@@ -35,36 +33,22 @@ class Trainer:
         self.total_epochs = total_epochs
         self.model = model
         
-        self.loss_count = 0
-        self.scaler = GradScaler()
 
-    def _run_batch(self, x, y, cumulative_loss_step=3):
+    def _run_batch(self, x, y):
         self.optimizer.zero_grad()
-        torch.cuda.empty_cache()
-        # x_ids, x_mask = ({**x}.values())
-        # y_ids, y_mask = ({**y}.values())
-        preds = None
+        loss = None
         while True:
             try:
-                with torch.autocast(DEVICE if DEVICE == "cpu" else "cuda"):
-                    preds = self.model(**x, labels=y)
-
-                # with torch.autocast(DEVICE if DEVICE == "cpu" else "cuda"):
-                #     losses.append(preds.loss)
+                loss = self.model(**x, labels=y["input_ids"]).loss
             except Exception as e:
                 if type(e) != OutOfMemoryError:
                     raise e
                 torch.cuda.empty_cache()
                 continue
             break
-        
-        # preds.loss.backward()        
-        # self.optimizer.step()
-        # Backward pass
-        # loss = preds.loss / cumulative_loss_step
-        preds.loss.backward()
+        loss.backward()
         self.optimizer.step()
-        return preds.loss.item()
+        return loss.item()
 
     def _run_epoch(self, epoch):
         self.model.train()
@@ -77,56 +61,48 @@ class Trainer:
             loss = self._run_batch(x, y)
             pbar.set_description_str(f"{pbar_prefix} - loss = {loss:.4f}")
             epoch_loss += loss
-        
+        self.scheduler.step()
         return epoch_loss / self.train_data.__len__()
 
-    def _save_current_checkpoint(self, epoch, **kwargs):
+    def _save_current_checkpoint(self, **kwargs):
         ckp = {
-                    "model_dict" : self.model.state_dict(),
-                    "optimizer_dict" : self.optimizer.state_dict(),
-                    "epoch" : epoch,
                     **kwargs
                }
-        PATH = "/tmp/xsaman02/gpt2/"
+        PATH = "/tmp/xsaman02/bart/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"gpt2.current.pt")
+        torch.save(ckp, PATH+"bart.current.pt")
         # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
     def _save_evaluated_checkpoint(self, **kwargs):
         ckp = {
-                **kwargs    
-            }
-        
-        PATH = "~/Project/models/gpt2/"
+                    **kwargs
+               }
+        PATH = "/tmp/xsaman02/bart/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
-        torch.save(ckp, PATH+"gpt2.evaluated.pt")
+        torch.save(ckp, PATH+"bart.evaluated.pt")
 
     def train(self, model_d : dict):
-        
-        if model_d is None:
-            model_d = {
-            }
-        
-        if model_d.get("epoch") is None:
-            model_d["epoch"] = 0
-            
         if model_d.get("loss_list") is None:
             model_d["loss_list"] = []
+        if model_d.get("epoch") is None:
+            model_d["epoch"] = 0
+                
+        last_epoch = model_d.get("epoch", 0)+1
             
-        for epoch in range(model_d.get("epoch")+1, self.total_epochs+1):
-            model_d["epoch"] = epoch
+        for epoch in range(last_epoch, self.total_epochs+1):
             model_d["model_dict"] = self.model.state_dict()
-            model_d["optimizer_dict"] = self.optimizer.state_dict()
+            model_d["optimized_dict"] = self.optimizer.state_dict()
+            model_d["scheduler_dict"] = self.scheduler.state_dict()
+            model_d["epoch"] = epoch
             
             if epoch % self.eval_every == 0 and epoch > 1:
                 eval_data = self.evaluate()
                 self._save_evaluated_checkpoint(**eval_data, **model_d)
             
-            model_d.get("loss_list").append(self._run_epoch(epoch))
-            self.scheduler.step()
-            self._save_current_checkpoint(epoch, **model_d)
+            model_d["loss_list"].append(self._run_epoch(epoch))
+            self._save_current_checkpoint(**model_d)
                 
     @torch.no_grad()
     def evaluate(self):
@@ -136,37 +112,28 @@ class Trainer:
         sentences_pred = []
         tokenizer = self.test_data.dataset.datasampler.tokenizer
 
-        test_dataloader = tqdm(self.test_data, leave=True)
-        
-        set_seed(1)
-        generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=DEVICE, max_length=MAX_SEQUENCE_SIZE)
-
+        test_dataloader = tqdm(self.test_data, leave=False)
 
         bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
         cur_bleu_score = 0
-        skipped = 0
-    
+        
+        set_seed(1)
+        generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=self.model.device)
+        
+        # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
-            # x = x.to(DEVICE)
-            y_pred = None
             generated_ids = None
+            y_pred = None
+            x = x.to(DEVICE)
             try:
-                y_pred = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
-                # generated_ids = self.model.generate(**x, num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
+                y_pred = [sample[0]["generated_text"][len(prompt):] for prompt, sample in zip(x_str, generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1))]                
             except Exception as e:
-                print(e)
+                if type(e) != OutOfMemoryError:
+                    raise e
                 torch.cuda.empty_cache()
-                skipped += 1
-                test_dataloader.set_postfix_str(f"Skipped: {skipped}")
-            
-            # break
-            
-            if generated_ids is None and y_pred is None:
                 continue
-
-            # y_pred = [y_pred[len(xs_str):] for xs_str, y_pred in zip(x_str, tokenizer.batch_decode(generated_ids, skip_special_tokens=True))]            
-            y_pred = [ys_pred[0]["generated_text"][len(xs_str):] for xs_str, ys_pred in zip(x_str, y_pred)]
             
+            # y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)
@@ -178,7 +145,7 @@ class Trainer:
             bleu_score.update(y_pred, y_str)
             cur_bleu_score = bleu_score.compute()
             
-            test_dataloader.set_description_str("BLEU: {:.3f}".format(cur_bleu_score))
+            test_dataloader.set_description("BLEU: {:.3f}".format(cur_bleu_score))
             
             # break
         

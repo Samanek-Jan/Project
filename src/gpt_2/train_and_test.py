@@ -37,7 +37,7 @@ def main():
     args = argument_parser.parse_args()
     
     
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True, padding_side = "left")
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, padding_side = "left")
     tokenizer.padding_side = "left"
     tokenizer.add_special_tokens({
         "pad_token" : "<pad>"
@@ -64,7 +64,7 @@ def main():
     valid_dataset = LocalDataset(tokenizer, "valid")
         
     train_dataloader = prepare_dataloader(train_dataset, BATCH_SIZE, collate_f)
-    valid_dataloader = prepare_dataloader(valid_dataset, BATCH_SIZE, collate_f)
+    valid_dataloader = prepare_dataloader(valid_dataset, 1, collate_f)
     
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
@@ -75,7 +75,7 @@ def main():
         last_epoch=model_dict.get("epoch", -1)
     )
     
-    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 1, args.epoch_n)
+    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 15, args.epoch_n)
     trainer.train(model_dict)
     print("Done")
 

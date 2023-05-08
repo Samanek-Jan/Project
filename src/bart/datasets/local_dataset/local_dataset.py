@@ -17,43 +17,37 @@ class LocalDataset(torch.utils.data.Dataset):
         else:
             self.db = mongoDB["cuda_snippets"]["validation"]
         
-        self.db.create_index("index")
-        self.db.create_index("validation.compiled")
-            
-        self.len = self.db.count_documents({})
-        self.max_epoch_size = max_epoch_size if max_epoch_size is not None else self.len
-        self.indecies = list(range(self.__len__()))
-        self.buffer = []
-        if shuffle:
-            random.shuffle(self.indecies)
-        self.cache()
-    
-    def cache(self):
-        append_size = self.buffer_size - len(self.buffer)
-        append_indices = None
-        if len(self.indecies) < append_size:
-            append_indices = self.indecies
-            self.indecies = list(range(self.__len__()))
-            if self.shuffle:
-                random.shuffle(self.indecies)
-            append_indices.extend(self.indecies[:min(self.buffer_size-len(append_indices), len(self.indecies))])
-        else:
-            append_indices = self.indecies[:min(append_size, len(self.indecies))]
+        self.db.create_index("metadata.correct_syntax")
         
-        self.buffer.extend(self.db.find({"index" : {"$in" : append_indices}}))
-    
+        # self.match_query = {"metadata.uses_local_mem" : True}
+        # self.match_query = {"metadata.header_cuda_prefixes" : "__global__"}
+        self.match_query = {"metadata.correct_syntax" : True}
+                
+        self.len = self.db.count_documents(self.match_query)
+        print(f"{part} dataset found {self.len} matching docs")
+        # if self.len == 0:
+        #     raise Exception("No data found.")
+        self._cache()
+
+    def _cache(self):
+        self.cursor = self.db.aggregate([
+            {"$match" : self.match_query},
+            {"$sample" : {"size" : self.len}}
+        ], allowDiskUse=True)
+
     def __len__(self):
-        return min(self.len, self.max_epoch_size)
+        return self.len
     
     def __getitem__(self, i):
-        if len(self.buffer) == 0:
-            self.cache()
-        kernel = self.buffer[i%len(self.buffer)]
-        return self.datasampler(kernel)
+        try:
+            for doc in self.cursor:
+                return self.datasampler(doc)
+        except:
+            self._cache()
+        return self.__getitem__(i)
     
     def __next__(self):
-        i = random.randint(0, self.__len__())
-        return self.__getitem__(i)
+        return self.__getitem__(0)
     
 
 from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer

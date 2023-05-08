@@ -81,6 +81,9 @@ class Model(nn.Module):
             target_mask = target_prefix[1]
             target = self.transformer.decoder(embeddings, source_encoding, tgt_key_padding_mask=target_mask.type(torch.bool), memory_key_padding_mask=source_mask.type(torch.bool))
         return self.head(target)
+    
+    def get_input_embeddings(self):
+        return self.embedding
         
     
 # if __name__ == "__main__":

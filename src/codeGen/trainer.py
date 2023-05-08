@@ -133,7 +133,7 @@ class Trainer:
         skipped = 0
         set_seed(1)
         # generator = pipeline('text-generation', model=self.model.module, tokenizer=tokenizer, device=f"cuda:{self.gpu_id}")
-        generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=f"cuda:0")
+        generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=self.model.device)
         # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
         for (x, x_str), (_, y_str) in test_dataloader:
             y_pred = None
