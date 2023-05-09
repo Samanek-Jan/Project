@@ -3,8 +3,11 @@ import torch
 import numpy as np
 import datasets
 import tokenizers
-from src.gpt_2.datasets.config import DEVICE
 import random
+
+from src.gpt_2.datasets.config import DEVICE
+from src.gpt_2.config import MAX_SEQUENCE_SIZE
+
 
 class LocalDataSampler():
     
@@ -24,6 +27,18 @@ class LocalDataSampler():
         y = kernel.get("body", "")
         
         if self.part == "valid":
+            tokenized = self.tokenizer.encode(x+y)
+            if len(tokenized) >= MAX_SEQUENCE_SIZE:
+                x_tokenized = self.tokenizer.encode(x)
+                y_tokenized = self.tokenizer.encode(y)
+                s = MAX_SEQUENCE_SIZE
+                x_tokenized = x_tokenized[:min(len(x_tokenized, s))]
+                s -= len(x_tokenized)
+                if s <= 0:
+                    return self.tokenizer.decode(x_tokenized), ""
+                y_tokenized = y_tokenized[:min(len(y_tokenized, s))]
+                return self.tokenizer.decode(x_tokenized), self.tokenizer.decode(y_tokenized)
+
             return x, y
         else:
             return (x + "\n" + y) , (y + self.tokenizer.eos_token)

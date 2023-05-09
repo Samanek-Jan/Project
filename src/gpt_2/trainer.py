@@ -80,11 +80,8 @@ class Trainer:
         
         return epoch_loss / self.train_data.__len__()
 
-    def _save_current_checkpoint(self, epoch, **kwargs):
+    def _save_current_checkpoint(self, **kwargs):
         ckp = {
-                    "model_dict" : self.model.state_dict(),
-                    "optimizer_dict" : self.optimizer.state_dict(),
-                    "epoch" : epoch,
                     **kwargs
                }
         PATH = "/tmp/xsaman02/gpt2/"
@@ -98,7 +95,7 @@ class Trainer:
                 **kwargs    
             }
         
-        PATH = "~/Project/models/gpt2/"
+        PATH = "/home/xsaman02/Project/models/gpt2/"
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
         torch.save(ckp, PATH+"gpt2.evaluated.pt")
@@ -126,7 +123,7 @@ class Trainer:
             
             model_d.get("loss_list").append(self._run_epoch(epoch))
             self.scheduler.step()
-            self._save_current_checkpoint(epoch, **model_d)
+            self._save_current_checkpoint(**model_d)
                 
     @torch.no_grad()
     def evaluate(self):
@@ -146,12 +143,14 @@ class Trainer:
         cur_bleu_score = 0
         skipped = 0
     
-        for (x, x_str), (_, y_str) in test_dataloader:
+        for (_, x_str), (_, y_str) in test_dataloader:
             # x = x.to(DEVICE)
             y_pred = None
             generated_ids = None
             try:
-                y_pred = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
+                y_pred = [sample[0]["generated_text"][len(prompt):] for prompt, sample in zip(x_str, generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1))]
+                
+                # y_pred = generator(x_str, max_new_tokens=MAX_SEQUENCE_SIZE, num_return_sequences=1, do_sample=False)
                 # generated_ids = self.model.generate(**x, num_beams=1, min_length=0, max_new_tokens=MAX_SEQUENCE_SIZE)
             except Exception as e:
                 print(e)
@@ -165,7 +164,7 @@ class Trainer:
                 continue
 
             # y_pred = [y_pred[len(xs_str):] for xs_str, y_pred in zip(x_str, tokenizer.batch_decode(generated_ids, skip_special_tokens=True))]            
-            y_pred = [ys_pred[0]["generated_text"][len(xs_str):] for xs_str, ys_pred in zip(x_str, y_pred)]
+            # y_pred = [ys_pred[0]["generated_text"][len(xs_str):] for xs_str, ys_pred in zip(x_str, y_pred)]
             
             # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             

@@ -36,7 +36,7 @@ class LocalDataset(torch.utils.data.Dataset):
         ], allowDiskUse=True)
 
     def __len__(self):
-        return self.len
+        return self.len//2
     
     def __getitem__(self, i):
         try:

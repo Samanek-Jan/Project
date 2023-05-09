@@ -3,9 +3,6 @@ from typing import Callable
 import torch
 import torch.nn as nn
 import math
-from baseline.config import BATCH_SIZE
-
-from src.baseline.datasets.config import DEVICE
 
 from src.baseline.transformer import Transformer
 
@@ -36,7 +33,7 @@ class Model(nn.Module):
         
         x_ids = self.embedding(x_ids)
         y_tgt_ids = self.embedding(y_ids[:,:-1])
-        y_tgt_mask = y_mask[:,:-1].to(DEVICE)
+        y_tgt_mask = y_mask[:,:-1].to(x_ids.device)
         
         target = y_ids[:,1:].to(x_ids.device)  
         
@@ -84,56 +81,3 @@ class Model(nn.Module):
     
     def get_input_embeddings(self):
         return self.embedding
-        
-    
-# if __name__ == "__main__":
-    
-#     transformer_kwargs = {
-#                         "num_encoder_layers" : 1, 
-#                         "num_decoder_layers" : 1,
-#                         "hidden_size" : 100,
-#                         "num_heads" : 1,
-#                         "dropout" : 0.3
-#                         }
-    
-#     num_embedds = 15000
-#     model = Model(num_embedds, 100, **transformer_kwargs).to(DEVICE)
-#     dataset = TranslationDataset("../data/train_government.txt", "../data/vocab1000.json")
-#     collate_f = CollateFunctor(PAD_ID)
-#     dataloader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True, drop_last=False, collate_fn=collate_f)
-#     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-#     tokenizer = dataset.tokenizer
-    
-#     param_n = get_n_params(model)
-#     print(f"Model param n = {param_n}")
-    
-#     # state_dict = torch.load("models/model_test.pt")
-#     # model.load_state_dict(state_dict)
-#     model.train()
-    
-#     bleu_score, (tg_sentences, pred_sentences) = evaluate(model, dataloader)
-#     print(f"Bleu score = {bleu_score}")
-#     rand_inds = torch.randint(0, len(tg_sentences), (3,))
-#     for i in rand_inds:
-#         print(tg_sentences[i])
-#         print(pred_sentences[i])
-#         print()
-    
-    # for i, (x, y, (src_s, trg_s)) in enumerate(dataloader, 1): 
-    #     # optimizer.zero_grad()
-    #     preds, loss = model(x, y)
-    #     print(f"{i}. preds shape = {preds.shape}, Loss = {loss.item():.4f}")
-    #     print(x[0])
-    #     print(y[0][:,1:])
-    #     print(preds.argmax(-1))
-    #     print(trg_s)
-    #     print(tokenizer.decode_batch(preds.argmax(-1).tolist(), skip_special_tokens=True))
-    #     print()
-        
-        # loss.backward()
-        # optimizer.step()
-        # if i == 3:
-        #     break
-        
-    # torch.save(model.state_dict(), "models/model_test.pt")
-    

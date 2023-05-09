@@ -76,7 +76,7 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 10, args.epoch_n)
+    trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 15, args.epoch_n)
     trainer.train(model_dict)
     print("Done")
 
