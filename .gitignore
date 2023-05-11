@@ -2,9 +2,30 @@ __init__.py
 __pycache__/
 .pytest_cache/
 .vscode/
+<<<<<<< HEAD
 data/processed
 data/raw
 data/tokenizer/
 test/test_data/
 data/db-backup/
 models/
+=======
+models/
+src/model/baseline/playground/output.json
+screenlog.*
+utils/bq-results-repos-2019.csv
+utils/bq-results-repos-2020.csv
+utils/bq-results-repos-2021.csv
+utils/bq-results-repos-2022.csv
+*/cuda_test_file.cu
+utils/a.out
+*/Stackoverflow.com-Posts.7z
+*/a.out
+cuda_test_file.cu
+a.out
+utils/repo_metadata.json
+test.cu
+skipped_repos.json
+utils/addon.json
+data/db-backup/
+>>>>>>> 6616bf26ef57ec8a869397c29ef96e33e6daaf61
