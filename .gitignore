@@ -2,17 +2,8 @@ __init__.py
 __pycache__/
 .pytest_cache/
 .vscode/
-data/processed/*/*.data.json
-data/raw
-data/tokenizer/
-test/test_data/
-test/test_data
-data/tokenizer/
-data/parser/skipped_files.log
 models/
 src/model/baseline/playground/output.json
-data/processed.zip
-data/processed/processed.zip
 screenlog.*
 utils/bq-results-repos-2019.csv
 utils/bq-results-repos-2020.csv
@@ -24,8 +15,8 @@ utils/a.out
 */a.out
 cuda_test_file.cu
 a.out
-data/*
 utils/repo_metadata.json
 test.cu
 skipped_repos.json
 utils/addon.json
+data/db-backup/
