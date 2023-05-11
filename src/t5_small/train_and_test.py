@@ -1,20 +1,16 @@
-from copy import deepcopy
-import os, sys
-from tokenizers import Tokenizer
+import os
 import torch
-import torch.nn as nn
 from torch.cuda import OutOfMemoryError
 import torchmetrics
 from tqdm import tqdm
 import argparse
 import transformers
 import json
-from torchmetrics.functional.text.rouge import rouge_score
-from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+
 from src.t5_small.datasets.config import DEVICE
 from src.t5_small.datasets.collate_functor import CollateFunctor
-
-from src.t5_small.config import BATCH_SIZE, BOS_TOKEN, EOS_TOKEN, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, PAD_TOKEN, UNK_TOKEN, WARMUP_DURATION
+from src.t5_small.config import BATCH_SIZE, LR, MAX_SEQUENCE_SIZE, MODELS_OUT_FOLDER, WARMUP_DURATION
 from src.t5_small.datasets.github_dataset.remote_dataset import RemoteDataset
 from src.t5_small.datasets.local_dataset.local_dataset import LocalDataset
 
@@ -43,14 +39,11 @@ def main():
     args = argument_parser.parse_args()
     
     pretraining = args.pretraining
-    # Initializing a GPT configuration
     configuration = AutoConfig.from_pretrained(args.model_name)
     configuration.max_length = MAX_SEQUENCE_SIZE
-    # global MAX_SEQUENCE_SIZE
-    # MAX_SEQUENCE_SIZE = configuration.n_positions
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=False, model_max_length=MAX_SEQUENCE_SIZE, add_bos_token=True)
-    # tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
+    tokenizer.add_tokens(["{", "}", "<", ">", ";", "[", "]", "&", "*"])
     
     # Initializing model
     model = None

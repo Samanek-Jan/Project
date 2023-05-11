@@ -25,20 +25,16 @@ model.load_state_dict(model_dict["model_dict"])
 # print(DEVICE)
 
 text_input = """
-// function for matrix multiplication
-__global__ void matrixMul(float* A, float* B, float* out, int row_size, int col_size)
+// function for optimized matrix multiplication using shared memory
+__global__ void optimizedMatrixMul(float* A, float* B, float* out, int row_size, int col_size)
 """.strip()
-
-# text_input = """
-# Hi, how are you?
-# """.strip()
 
 generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
 set_seed(1)
-print(generator(text_input, max_length=512, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
+print(generator(text_input, max_length=800, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
 
 set_seed(2)
-print(generator(text_input, max_length=512, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
+print(generator(text_input, max_length=800, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
 
 set_seed(3)
-print(generator(text_input, max_length=512, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
+print(generator(text_input, max_length=800, num_return_sequences=1)[0]["generated_text"].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n "))
