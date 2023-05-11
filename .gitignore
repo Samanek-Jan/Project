@@ -6,3 +6,5 @@ data/processed
 data/raw
 data/tokenizer/
 test/test_data/
+data/db-backup/
+models/
