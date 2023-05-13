@@ -72,7 +72,6 @@ class Trainer:
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
         torch.save(ckp, PATH+"bart.current.pt")
-        # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
     def _save_evaluated_checkpoint(self, **kwargs):
         ckp = {

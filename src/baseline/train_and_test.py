@@ -76,12 +76,6 @@ def main():
     param_n = get_n_params(model)
     print(f"Model params num. = {param_n}")
     
-    # scheduler = transformers.get_constant_schedule_with_warmup(                
-    #     optimizer = optimizer,
-    #     num_warmup_steps = WARMUP_DURATION,
-    #     last_epoch=model_dict.get("epoch", -1)
-    # )
-    
     scheduler = transformers.get_linear_schedule_with_warmup(                
             optimizer = optimizer,
             num_warmup_steps = WARMUP_DURATION,
@@ -92,8 +86,6 @@ def main():
     trainer = Trainer(model, train_dataloader, valid_dataloader, optimizer, scheduler, 41, args.epoch_n)
     trainer.train(model_dict)
 
-    
-    # train_and_test(model, optimizer, train_dataloader, valid_dataloader, epoch_n=args.epoch_n, model_d=model_dict)
     print("Done")
 
 def get_n_params(model):

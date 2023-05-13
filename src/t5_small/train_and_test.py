@@ -175,7 +175,6 @@ def train_and_test(model,
                 break
 
             t = torch.cuda.get_device_properties(0).total_memory
-            # r = torch.cuda.memory_reserved(0)
             a = torch.cuda.memory_allocated(0)
             pbar.set_postfix_str(f"total. : {format_memory_int(t)}, alloc. : {format_memory_int(a)}")
             
@@ -189,7 +188,6 @@ def train_and_test(model,
             epoch_loss.append(float(loss.item()))
             loss.backward()
             optimizer.step()
-            # break
         
         loss_list.append(float(torch.mean(torch.tensor(epoch_loss)).item()))
         epoch_loss.clear()
@@ -229,12 +227,7 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
 
     bleu_score = torchmetrics.BLEUScore(tokenizer=tokenizer)
     cur_bleu_score = 0
-    cur_rouge_score = 0
     
-    # generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=DEVICE)
-    
-    
-    # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
     for i, ((x, x_str), (y, y_str)) in enumerate(test_dataloader):
         generated_ids = None
         while True:
@@ -256,12 +249,9 @@ def evaluate(model, test_dataloader, pbar_prefix=""):
         y_str = [[y_sentence] for y_sentence in y_str]
         bleu_score.update(y_pred, y_str)
         cur_bleu_score = bleu_score.compute()
-        # cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_fmeasure"]
         
         test_dataloader.set_description("{} BLEU: {:.3f}".format(pbar_prefix, cur_bleu_score))
-        
-        # break
-    
+            
     print("BLEU: {:.3f}".format(cur_bleu_score))
     
     return float(cur_bleu_score), (sources_list, sentences_target, sentences_pred)

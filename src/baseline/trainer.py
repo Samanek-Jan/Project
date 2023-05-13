@@ -80,7 +80,6 @@ class Trainer:
         if not os.path.isdir(PATH):
             os.makedirs(PATH, exist_ok=True)
         torch.save(ckp, PATH+"baseline.current.pt")
-        # print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
     
     def _save_evaluated_checkpoint(self, **kwargs):
         ckp = {
@@ -143,21 +142,17 @@ class Trainer:
                     torch.cuda.empty_cache()
                     continue
                 break
-            # y_pred = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-            # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)
             sentences_target.extend(y_str)
             sentences_pred.extend(y_pred)
-            # cur_rouge_score = rouge_score(sentences_pred, sentences_target, tokenizer=tokenizer, rouge_keys="rougeL")["rougeL_recall"]
-
+            
             y_str = [[y_sentence] for y_sentence in y_str]
             bleu_score.update(y_pred, y_str)
             cur_bleu_score = bleu_score.compute()
             
             test_dataloader.set_description("BLEU: {:.3f}".format(cur_bleu_score))
             
-            # break
         
         print("BLEU: {:.3f}".format(cur_bleu_score))
         

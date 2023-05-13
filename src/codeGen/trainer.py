@@ -132,16 +132,13 @@ class Trainer:
         cur_bleu_score = 0
         skipped = 0
         set_seed(1)
-        # generator = pipeline('text-generation', model=self.model.module, tokenizer=tokenizer, device=f"cuda:{self.gpu_id}")
         generator = pipeline('text-generation', model=self.model, tokenizer=tokenizer, device=self.model.device)
-        # rouge_score = torchmetrics.text.rouge.ROUGEScore(tokenizer=tokenizer, rouge_keys="rougeL")
+
         for (x, x_str), (_, y_str) in test_dataloader:
             y_pred = None
             x = x.to(f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
             try:
                 y_pred = [sample[0]["generated_text"][len(prompt):].replace("{\t", "{\n\t").replace("}\t", "}\n\t").replace(";\t", ";\n\t").replace("{ ", "{\n ").replace("} ", "}\n ").replace("; ", ";\n ") for prompt, sample in zip(x_str, generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1))]
-                # generated_ids = torch.argmax(self.model(**x).logits, dim=-1)
-                # generated_text = generator(x_str, max_length=MAX_SEQUENCE_SIZE, num_return_sequences=1)
             except:
                 skipped += 1
                 test_dataloader.set_postfix_str(f"Skipped: {skipped}")
@@ -149,9 +146,6 @@ class Trainer:
             
             if y_pred is None:
                 continue
-            
-            # y_pred = [prompt[len(output):] for prompt, output in zip(x_str, tokenizer.batch_decode(generated_ids, skip_special_tokens=True))]
-            # y_pred = [sample[0]["generated_text"] for sample in generated_text]
             
             sources_list.extend(x_str)
             sentences_target.extend(y_str)
@@ -162,8 +156,6 @@ class Trainer:
             cur_bleu_score = bleu_score.compute()
             
             test_dataloader.set_description_str("BLEU: {:.3f}".format(cur_bleu_score))
-            
-            # break
         
         print("BLEU: {:.3f}".format(cur_bleu_score))
         
