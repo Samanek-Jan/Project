@@ -1,6 +1,17 @@
 # Code for thesis with the topic
 ### Code generation from textual description of functionality
 
+### Author: 
+**Bc. Jan Šamánek**
+
+### Supervisor:
+**Doc. RNDr. PAVEL SMRŽ, Ph.D.**
+
+### University: 
+**Brno University of Technology**
+### Faculty: 
+**Faculty of information technology**
+
 ## Brief
 > This repository containes master thesis practical part and text. The practical part contains scripts for creating new corpora, analysing the newly aquired data and pipelines for training and evaluation of several language models.
 
